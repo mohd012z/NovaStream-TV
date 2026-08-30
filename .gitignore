@@ -1,6 +1,10 @@
-.env
-.env.local
-node_modules/
-*.pyc
-__pycache__/
+.gradle/
+.idea/
+local.properties
+*.iml
+/build/
+app/build/
 .DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
