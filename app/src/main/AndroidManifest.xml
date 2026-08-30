@@ -2,8 +2,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:theme="@style/Theme.NovaStreamTV"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="PerfectTV Enhanced"
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"

@@ -13,6 +13,9 @@ object StreamPlayerFactory {
         item.referer?.takeIf { it.isNotBlank() }?.let { headers["Referer"] = it }
         val http = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
+            .setConnectTimeoutMs(8_000)
+            .setReadTimeoutMs(15_000)
+            .setAllowCrossProtocolRedirects(true)
             .apply { item.userAgent?.takeIf { it.isNotBlank() }?.let { setUserAgent(it) } }
 
         val sourceFactory: DataSource.Factory = when (item.kind) {
