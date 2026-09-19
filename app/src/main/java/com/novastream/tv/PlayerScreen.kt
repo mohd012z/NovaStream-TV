@@ -63,15 +63,15 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     val handler = remember { Handler(Looper.getMainLooper()) }
 
     val built = remember(item.id) { StreamPlayerFactory.buildAdaptive(context, item) }
-    val player: ExoPlayer = built.player.apply {
-            setMediaItem(StreamPlayerFactory.mediaItem(item))
-            if (item.kind != MediaKind.LIVE) {
-                val resume = store.get(item.id)?.positionMs ?: 0L
-                if (resume > 10_000) seekTo(resume)
-            }
-            prepare()
-            playWhenReady = true
+    val player: ExoPlayer = built.player
+    LaunchedEffect(player, item.id) {
+        player.setMediaItem(StreamPlayerFactory.mediaItem(item))
+        if (item.kind != MediaKind.LIVE) {
+            val resume = store.get(item.id)?.positionMs ?: 0L
+            if (resume > 10_000) player.seekTo(resume)
         }
+        player.prepare()
+        player.playWhenReady = true
     }
 
     LaunchedEffect(showControls, message) {
