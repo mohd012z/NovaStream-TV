@@ -499,26 +499,103 @@ private fun GlassRow(onClick: () -> Unit, content: @Composable RowScope.() -> Un
 @Composable
 private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
     var query by remember { mutableStateOf("") }
-    val results = remember(items, query) {
-        if (query.isBlank()) emptyList() else items.filter {
-            it.name.contains(query, true) || it.groupTitle.orEmpty().contains(query, true)
-        }.take(150)
+    var type by remember { mutableStateOf("All") }
+    var year by remember { mutableStateOf("All") }
+    var genre by remember { mutableStateOf("All") }
+    var group by remember { mutableStateOf("All") }
+
+    fun inferredYear(item: PlaylistItem): Int? =
+        item.year ?: Regex("""\b(19|20)\d{2}\b""").find(item.name)?.value?.toIntOrNull()
+
+    fun inferredGenre(item: PlaylistItem): String =
+        item.genre?.takeIf { it.isNotBlank() } ?: item.groupTitle.orEmpty().ifBlank { "Other" }
+
+    val years = remember(items) {
+        listOf("All") + items.mapNotNull(::inferredYear).distinct().sortedDescending().map(Int::toString)
     }
+    val genres = remember(items) {
+        listOf("All") + items.map(::inferredGenre).filter { it.isNotBlank() }.distinct().sorted().take(40)
+    }
+    val groups = remember(items) {
+        listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().sorted().take(40)
+    }
+
+    val results = remember(items, query, type, year, genre, group) {
+        items.asSequence().filter { item ->
+            val textMatch = query.isBlank() ||
+                item.name.contains(query, true) ||
+                item.tvgName.orEmpty().contains(query, true) ||
+                item.groupTitle.orEmpty().contains(query, true) ||
+                epgIndex.now(item.tvgId)?.title.orEmpty().contains(query, true)
+            val typeMatch = when (type) {
+                "Live" -> item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
+                "Movies" -> item.kind == MediaKind.MOVIE
+                "Series" -> item.kind == MediaKind.SERIES
+                else -> true
+            }
+            val yearMatch = year == "All" || inferredYear(item)?.toString() == year
+            val genreMatch = genre == "All" || inferredGenre(item).equals(genre, true)
+            val groupMatch = group == "All" || item.groupTitle.orEmpty().equals(group, true)
+            textMatch && typeMatch && yearMatch && genreMatch && groupMatch
+        }.take(300).toList()
+    }
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Search", fontSize = 28.sp, fontWeight = FontWeight.Black) }
+        item {
+            Text("Discover", fontSize = 28.sp, fontWeight = FontWeight.Black)
+            Text("Search and filter your unified TV library", color = Muted)
+        }
         item {
             OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
+                value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
-                placeholder = { Text("Channel, movie or series") },
-                singleLine = true
+                trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear") } },
+                placeholder = { Text("Channel, programme, movie or series") }, singleLine = true
             )
         }
+        item {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("All", "Live", "Movies", "Series").forEach { value ->
+                    FilterChip(selected = type == value, onClick = { type = value }, label = { Text(value) })
+                }
+            }
+        }
+        item {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterMenu("Year", year, years) { year = it }
+                FilterMenu("Type / Genre", genre, genres) { genre = it }
+                FilterMenu("TV group", group, groups) { group = it }
+                if (year != "All" || genre != "All" || group != "All" || type != "All") {
+                    AssistChip(onClick = { type = "All"; year = "All"; genre = "All"; group = "All" }, label = { Text("Reset") }, leadingIcon = { Icon(Icons.Filled.RestartAlt, null) })
+                }
+            }
+        }
+        item { Text("${results.size} results", color = Muted, fontSize = 12.sp) }
+        if (results.isEmpty()) item { EmptyCard("No matching content. Try removing a filter.") }
         items(results, key = { it.id }) { item ->
             val now = epgIndex.now(item.tvgId)
             ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
+        }
+    }
+}
+
+@Composable
+private fun FilterMenu(label: String, selected: String, values: List<String>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = { Text(if (selected == "All") label else "$label: $selected", maxLines = 1) },
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            values.take(50).forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(value, maxLines = 1) },
+                    onClick = { onSelect(value); expanded = false },
+                    leadingIcon = { if (selected == value) Icon(Icons.Filled.Check, null) }
+                )
+            }
         }
     }
 }
