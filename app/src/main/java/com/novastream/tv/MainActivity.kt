@@ -423,7 +423,7 @@ private fun PosterChannelCard(item: PlaylistItem, now: EpgProgramme?, onClick: (
 
 @Composable
 private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
-    var group by remember { mutableStateOf("All") }
+    var group by remember { mutableStateOf("All") }\n    var rating by remember { mutableStateOf("All") }
     val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().take(20) }
     val filtered = remember(items, group) { if (group == "All") items else items.filter { it.groupTitle == group } }
 
@@ -520,7 +520,7 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
         listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().sorted().take(40)
     }
 
-    val results = remember(items, query, type, year, genre, group) {
+    val results = remember(items, query, type, year, genre, group, rating) {
         items.asSequence().filter { item ->
             val textMatch = query.isBlank() ||
                 item.name.contains(query, true) ||
@@ -564,9 +564,9 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterMenu("Year", year, years) { year = it }
                 FilterMenu("Type / Genre", genre, genres) { genre = it }
-                FilterMenu("TV group", group, groups) { group = it }
-                if (year != "All" || genre != "All" || group != "All" || type != "All") {
-                    AssistChip(onClick = { type = "All"; year = "All"; genre = "All"; group = "All" }, label = { Text("Reset") }, leadingIcon = { Icon(Icons.Filled.RestartAlt, null) })
+                FilterMenu("TV group", group, groups) { group = it }\n                FilterMenu("Rating", rating, listOf("All") + ContentRating.entries.map { it.label }) { rating = it }
+                if (year != "All" || genre != "All" || group != "All" || type != "All" || rating != "All") {
+                    AssistChip(onClick = { type = "All"; year = "All"; genre = "All"; group = "All"; rating = "All" }, label = { Text("Reset") }, leadingIcon = { Icon(Icons.Filled.RestartAlt, null) })
                 }
             }
         }
