@@ -65,7 +65,7 @@ fun NovaStreamApp(activity: MainActivity) {
     val context = LocalContext.current
     val repo = remember { LibraryRepository(context) }\n    val sourceStore = remember { PlaylistSourceStore(context) }
     var showSplash by remember { mutableStateOf(true) }
-    var selectedOrientation by remember { mutableStateOf<OrientationChoice?>(null) }
+    var selectedOrientation by remember { mutableStateOf<OrientationChoice?>(OrientationChoice.AUTO) }
     var page by remember { mutableStateOf(AppPage.HOME) }
     var playing by remember { mutableStateOf<PlaylistItem?>(null) }
     var libraryVersion by remember { mutableIntStateOf(0) }
@@ -175,9 +175,9 @@ private fun BottomBar(current: AppPage, onSelect: (AppPage) -> Unit) {
         listOf(
             Triple(AppPage.HOME, "Home", Icons.Filled.Home),
             Triple(AppPage.LIVE, "Live", Icons.Filled.LiveTv),
+            Triple(AppPage.SOURCES, "Playlists", Icons.Filled.PlaylistPlay),
             Triple(AppPage.SEARCH, "Search", Icons.Filled.Search),
-            Triple(AppPage.HISTORY, "History", Icons.Filled.History),
-            Triple(AppPage.DOWNLOADS, "Downloads", Icons.Filled.Download)
+            Triple(AppPage.HISTORY, "History", Icons.Filled.History)
         ).forEach { (page, label, icon) ->
             NavigationBarItem(
                 selected = current == page,
