@@ -30,7 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.PlaybackException
+import androidx.media3.common.C\nimport androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -45,7 +45,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var message by remember { mutableStateOf("Connecting…") }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
-    var showTrackInfo by remember { mutableStateOf(false) }
+    var showTrackInfo by remember { mutableStateOf(false) }\n    var showSpeed by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var feedback by remember { mutableStateOf<GestureFeedback?>(null) }
     var isPlaying by remember { mutableStateOf(false) }\n    var isMuted by remember { mutableStateOf(false) }\n    var previousVolume by remember { mutableFloatStateOf(1f) }
@@ -128,6 +128,13 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                             target = this,
                             brightnessSensitivity = prefs.brightnessSensitivity,
                             volumeSensitivity = prefs.volumeSensitivity,
+                            canSeek = { item.kind != MediaKind.LIVE && player.isCurrentMediaItemSeekable },
+                            onSeek = { delta ->
+                                if (item.kind != MediaKind.LIVE && player.isCurrentMediaItemSeekable) {
+                                    val duration = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                                    player.seekTo((player.currentPosition + delta).coerceIn(0L, duration))
+                                }
+                            },
                             onFeedback = { feedback = it },
                             onTap = { showControls = !showControls }
                         )
@@ -155,6 +162,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     }
                 },
                 onTracks = { showTrackInfo = true },
+                onSpeed = { showSpeed = true },
                 onPip = {
                     activity.enterPictureInPictureMode(
                         PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
@@ -190,6 +198,25 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         }
     }
 
+    if (showSpeed) {
+        val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+        AlertDialog(
+            onDismissRequest = { showSpeed = false },
+            title = { Text("Playback speed") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    speeds.forEach { speed ->
+                        TextButton(
+                            onClick = { player.setPlaybackSpeed(speed); showSpeed = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (speed == 1f) "Normal (1×)" else "${speed}×") }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
     if (showTrackInfo) {
         AlertDialog(
             onDismissRequest = { showTrackInfo = false },
@@ -215,6 +242,7 @@ private fun PlayerChrome(
     onPlayPause: () -> Unit,
     onMute: () -> Unit,
     onTracks: () -> Unit,
+    onSpeed: () -> Unit,
     onPip: () -> Unit,
     onRotate: () -> Unit
 ) {
@@ -233,7 +261,11 @@ private fun PlayerChrome(
             Spacer(Modifier.width(8.dp))
             PlayerCircleButton(Icons.Filled.Tune, "Audio, subtitles and quality", onTracks)
             Spacer(Modifier.width(8.dp))
-            PlayerCircleButton(Icons.Filled.PictureInPictureAlt, "Picture in picture", onPip)
+            if (item.kind != MediaKind.LIVE) {
+                PlayerCircleButton(Icons.Filled.Speed, "Playback speed", onSpeed)
+                Spacer(Modifier.width(8.dp))
+            }
+            PlayerCircleButton(Icons.Filled.PictureInPictureAlt, "Mini player", onPip)
             Spacer(Modifier.width(8.dp))
             PlayerCircleButton(Icons.Filled.ScreenRotation, "Rotate", onRotate)
         }
@@ -280,18 +312,33 @@ private fun GestureHud(feedback: GestureFeedback, modifier: Modifier = Modifier)
     val percent = when (feedback) {
         is GestureFeedback.Brightness -> feedback.percent
         is GestureFeedback.Volume -> feedback.percent
+        is GestureFeedback.Seek -> feedback.seconds
     }
     Surface(modifier, color = Color.Black.copy(alpha = .78f), shape = RoundedCornerShape(24.dp)) {
         Column(Modifier.padding(horizontal = 28.dp, vertical = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                if (isBrightness) Icons.Filled.Brightness6 else Icons.Filled.VolumeUp,
+                when (feedback) {
+                    is GestureFeedback.Brightness -> Icons.Filled.Brightness6
+                    is GestureFeedback.Volume -> Icons.Filled.VolumeUp
+                    is GestureFeedback.Seek -> if (feedback.forward) Icons.Filled.FastForward else Icons.Filled.FastRewind
+                },
                 null,
                 tint = Color(0xFF67D6FF),
                 modifier = Modifier.size(38.dp)
             )
             Spacer(Modifier.height(8.dp))
-            Text("$percent%", color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp)
-            Text(if (isBrightness) "Brightness" else "Volume", color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
+            Text(
+                if (feedback is GestureFeedback.Seek) "${if (feedback.forward) "+" else "-"}${percent}s" else "$percent%",
+                color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp
+            )
+            Text(
+                when (feedback) {
+                    is GestureFeedback.Brightness -> "Brightness"
+                    is GestureFeedback.Volume -> "Volume"
+                    is GestureFeedback.Seek -> if (feedback.forward) "Forward" else "Rewind"
+                },
+                color = Color.White.copy(alpha = .7f), fontSize = 11.sp
+            )
         }
     }
 }
