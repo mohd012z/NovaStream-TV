@@ -136,6 +136,13 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
     BackHandler { onBack() }
 
+    fun seekBy(deltaMs: Long) {
+        if (item.kind != MediaKind.LIVE && player.isCurrentMediaItemSeekable) {
+            val duration = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+            player.seekTo((player.currentPosition + deltaMs).coerceIn(0L, duration))
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -152,12 +159,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                             brightnessSensitivity = prefs.brightnessSensitivity,
                             volumeSensitivity = prefs.volumeSensitivity,
                             canSeek = { item.kind != MediaKind.LIVE && player.isCurrentMediaItemSeekable },
-                            onSeek = { delta ->
-                                if (item.kind != MediaKind.LIVE && player.isCurrentMediaItemSeekable) {
-                                    val duration = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-                                    player.seekTo((player.currentPosition + delta).coerceIn(0L, duration))
-                                }
-                            },
+                            onSeek = { delta -> seekBy(delta) },
                             onFeedback = { feedback = it },
                             onTap = { showControls = !showControls }
                         )
@@ -175,6 +177,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 signalInfo = signalInfo,
                 onBack = onBack,
                 onPlayPause = { if (player.isPlaying) player.pause() else player.play() },
+                onSeekBack = { seekBy(-10_000) },
+                onSeekForward = { seekBy(10_000) },
                 isMuted = isMuted,
                 onMute = {
                     if (isMuted) {
@@ -295,6 +299,8 @@ private fun PlayerChrome(
     isMuted: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
+    onSeekBack: () -> Unit,
+    onSeekForward: () -> Unit,
     onMute: () -> Unit,
     onTracks: () -> Unit,
     onSpeed: () -> Unit,
@@ -304,7 +310,7 @@ private fun PlayerChrome(
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .18f))) {
         Row(
-            Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(12.dp),
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             PlayerCircleButton(Icons.Filled.ArrowBack, "Back", onBack)
@@ -329,17 +335,29 @@ private fun PlayerChrome(
             PlayerCircleButton(Icons.Filled.ScreenRotation, "Rotate", onRotate)
         }
 
-        Box(
-            Modifier.align(Alignment.Center).size(72.dp).background(Color.Black.copy(alpha = .55f), CircleShape)
-                .clickable(onClick = onPlayPause),
-            contentAlignment = Alignment.Center
+        Row(
+            Modifier.align(Alignment.Center),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(28.dp)
         ) {
-            Icon(
-                if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                if (isPlaying) "Pause" else "Play",
-                tint = Color.White,
-                modifier = Modifier.size(42.dp)
-            )
+            if (item.kind != MediaKind.LIVE) {
+                PlayerCircleButton(Icons.Filled.Replay10, "Rewind 10 seconds", onSeekBack, size = 56.dp, iconSize = 28.dp)
+            }
+            Box(
+                Modifier.size(72.dp).background(Color.Black.copy(alpha = .55f), CircleShape)
+                    .clickable(onClick = onPlayPause),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    if (isPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(42.dp)
+                )
+            }
+            if (item.kind != MediaKind.LIVE) {
+                PlayerCircleButton(Icons.Filled.Forward10, "Forward 10 seconds", onSeekForward, size = 56.dp, iconSize = 28.dp)
+            }
         }
 
         if (item.kind == MediaKind.LIVE) {
@@ -358,11 +376,17 @@ private fun PlayerChrome(
 }
 
 @Composable
-private fun PlayerCircleButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: () -> Unit) {
+private fun PlayerCircleButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    action: () -> Unit,
+    size: androidx.compose.ui.unit.Dp = 46.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 23.dp
+) {
     Box(
-        Modifier.size(46.dp).background(Color(0xFF1B2430).copy(alpha = .88f), CircleShape).clickable(onClick = action),
+        Modifier.size(size).background(Color(0xFF1B2430).copy(alpha = .88f), CircleShape).clickable(onClick = action),
         contentAlignment = Alignment.Center
-    ) { Icon(icon, label, tint = Color.White, modifier = Modifier.size(23.dp)) }
+    ) { Icon(icon, label, tint = Color.White, modifier = Modifier.size(iconSize)) }
 }
 
 @Composable
