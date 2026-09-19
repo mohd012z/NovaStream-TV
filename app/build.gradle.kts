@@ -9,7 +9,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.perfecttv.enhanced"
+        applicationId = "com.novastreamertv"
         minSdk = 26
         targetSdk = 35
         versionCode = 2
