@@ -32,7 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -234,7 +234,11 @@ private fun HomeScreen(
 ) {
     val recent = remember(playlist) { PlaybackStore(activity).recent(8) }
     val live = remember(playlist) { playlist.filter { it.kind == MediaKind.LIVE || it.kind == MediaKind.UNKNOWN }.take(10) }
-    val movies = remember(playlist) { playlist.filter { it.kind == MediaKind.MOVIE }.take(10) }
+    val movies = remember(playlist) { playlist.filter { it.kind == MediaKind.MOVIE }.take(12) }
+    val series = remember(playlist) { playlist.filter { it.kind == MediaKind.SERIES }.take(12) }
+    val news = remember(playlist) { playlist.filter { it.groupTitle.orEmpty().contains("news", true) }.take(12) }
+    val sports = remember(playlist) { playlist.filter { it.groupTitle.orEmpty().contains("sport", true) }.take(12) }
+    val hero = remember(live, movies) { live.firstOrNull() ?: movies.firstOrNull() }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -255,19 +259,40 @@ private fun HomeScreen(
 
         item {
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            else Text("${playlist.size} items • $epgCount EPG programmes", color = Muted, fontSize = 12.sp)
+            else Text("${playlist.size} channels & titles • $epgCount EPG programmes", color = Muted, fontSize = 12.sp)
+        }
+
+        hero?.let { featured ->
+            item {
+                Box(
+                    Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(28.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF17364D), Color(0xFF111827), Bg)))
+                        .border(1.dp, Accent.copy(alpha = .20f), RoundedCornerShape(28.dp))
+                ) {
+                    if (!featured.logoUrl.isNullOrBlank()) {
+                        AsyncImage(featured.logoUrl, featured.name, Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.48f).padding(24.dp), contentScale = ContentScale.Fit)
+                    }
+                    Column(Modifier.align(Alignment.CenterStart).padding(22.dp).fillMaxWidth(.62f)) {
+                        Surface(shape = RoundedCornerShape(50), color = Color.Red.copy(alpha = .85f)) {
+                            Text("LIVE", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontWeight = FontWeight.Black, fontSize = 10.sp)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text(featured.name, fontSize = 25.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(epgIndex.now(featured.tvgId)?.title ?: featured.groupTitle.orEmpty().ifBlank { "Watch now" }, color = Muted, maxLines = 2)
+                        Spacer(Modifier.height(14.dp))
+                        Button(onClick = { play(featured) }) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Watch") }
+                    }
+                }
+            }
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FeatureCard("LIVE TV", "Watch channels", Icons.Filled.LiveTv, Modifier.weight(1f)) { navigate(AppPage.LIVE) }
-                FeatureCard("MOVIES", "On demand", Icons.Filled.Movie, Modifier.weight(1f)) { navigate(AppPage.MOVIES) }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FeatureCard("SERIES", "Episodes", Icons.Filled.VideoLibrary, Modifier.weight(1f)) { navigate(AppPage.SERIES) }
-                FeatureCard("SEARCH", "Find anything", Icons.Filled.Search, Modifier.weight(1f)) { navigate(AppPage.SEARCH) }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                item { QuickAction("Live", Icons.Filled.LiveTv) { navigate(AppPage.LIVE) } }
+                item { QuickAction("Movies", Icons.Filled.Movie) { navigate(AppPage.MOVIES) } }
+                item { QuickAction("Series", Icons.Filled.VideoLibrary) { navigate(AppPage.SERIES) } }
+                item { QuickAction("Playlists", Icons.Filled.PlaylistPlay) { navigate(AppPage.SOURCES) } }
+                item { QuickAction("Search", Icons.Filled.Search) { navigate(AppPage.SEARCH) } }
             }
         }
 
@@ -298,7 +323,21 @@ private fun HomeScreen(
             }
         }
 
-        if (movies.isNotEmpty()) {
+        if (news.isNotEmpty()) {
+            item { SectionHeader("News", "See all") { navigate(AppPage.LIVE) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(news, key = { it.id }) { item -> PosterChannelCard(item, epgIndex.now(item.tvgId)) { play(item) } } } }
+        }
+
+        if (sports.isNotEmpty()) {
+            item { SectionHeader("Sports", "See all") { navigate(AppPage.LIVE) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(sports, key = { it.id }) { item -> PosterChannelCard(item, epgIndex.now(item.tvgId)) { play(item) } } } }
+        }
+
+        if (series.isNotEmpty()) {
+            item { SectionHeader("Series", "See all") { navigate(AppPage.SERIES) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(series, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
+        }
+\n        if (movies.isNotEmpty()) {
             item { SectionHeader("Movies", "See all") { navigate(AppPage.MOVIES) } }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
