@@ -12,11 +12,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,12 +34,16 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -454,31 +461,36 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
     var rating by remember { mutableStateOf("All") }
     val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().take(20) }
     val filtered = remember(items, group) { if (group == "All") items else items.filter { it.groupTitle == group } }
+    val listState = rememberLazyListState()
 
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(18.dp, 18.dp, 18.dp, 28.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text(title, fontSize = 28.sp, fontWeight = FontWeight.Black)
-            Text("${filtered.size} items", color = Muted)
-        }
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                groups.forEach { g ->
-                    FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g, maxLines = 1) })
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = PaddingValues(18.dp, 18.dp, 30.dp, 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Text(title, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("${filtered.size} items", color = Muted)
+            }
+            item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    groups.forEach { g ->
+                        FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g, maxLines = 1) })
+                    }
+                }
+            }
+            if (filtered.isEmpty()) {
+                item { EmptyCard("Import an authorized M3U playlist in Settings") }
+            } else {
+                items(filtered, key = { it.id }) { item ->
+                    val now = epgIndex.now(item.tvgId)
+                    ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
                 }
             }
         }
-        if (filtered.isEmpty()) {
-            item { EmptyCard("Import an authorized M3U playlist in Settings") }
-        } else {
-            items(filtered, key = { it.id }) { item ->
-                val now = epgIndex.now(item.tvgId)
-                ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
-            }
-        }
+        FastScrollbar(listState, filtered.size, Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -532,6 +544,7 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
     var genre by remember { mutableStateOf("All") }
     var group by remember { mutableStateOf("All") }
     var rating by remember { mutableStateOf("All") }
+    var country by remember { mutableStateOf("All") }
 
     fun inferredYear(item: PlaylistItem): Int? =
         item.year ?: Regex("""\b(19|20)\d{2}\b""").find(item.name)?.value?.toIntOrNull()
@@ -548,8 +561,11 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
     val groups = remember(items) {
         listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().sorted().take(40)
     }
+    val countries = remember(items) {
+        listOf("All") + items.mapNotNull { it.country?.takeIf(String::isNotBlank) }.distinct().sorted().take(60)
+    }
 
-    val results = remember(items, query, type, year, genre, group, rating) {
+    val results = remember(items, query, type, year, genre, group, rating, country) {
         items.asSequence().filter { item ->
             val textMatch = query.isBlank() ||
                 item.name.contains(query, true) ||
@@ -566,47 +582,53 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
             val genreMatch = genre == "All" || inferredGenre(item).equals(genre, true)
             val groupMatch = group == "All" || item.groupTitle.orEmpty().equals(group, true)
             val ratingMatch = rating == "All" || item.contentRating.label == rating
-            textMatch && typeMatch && yearMatch && genreMatch && groupMatch && ratingMatch
+            val countryMatch = country == "All" || item.country.orEmpty().equals(country, true)
+            textMatch && typeMatch && yearMatch && genreMatch && groupMatch && ratingMatch && countryMatch
         }.take(300).toList()
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            Text("Discover", fontSize = 28.sp, fontWeight = FontWeight.Black)
-            Text("Search and filter your unified TV library", color = Muted)
-        }
-        item {
-            OutlinedTextField(
-                value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
-                trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear") } },
-                placeholder = { Text("Channel, programme, movie or series") }, singleLine = true
-            )
-        }
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Live", "Movies", "Series").forEach { value ->
-                    FilterChip(selected = type == value, onClick = { type = value }, label = { Text(value) })
+    val searchListState = rememberLazyListState()
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = searchListState, contentPadding = PaddingValues(18.dp, 18.dp, 30.dp, 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Text("Discover", fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("Search and filter your unified TV library", color = Muted)
+            }
+            item {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
+                    trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear") } },
+                    placeholder = { Text("Channel, programme, movie or series") }, singleLine = true
+                )
+            }
+            item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Live", "Movies", "Series").forEach { value ->
+                        FilterChip(selected = type == value, onClick = { type = value }, label = { Text(value) })
+                    }
                 }
             }
-        }
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterMenu("Year", year, years) { year = it }
-                FilterMenu("Type / Genre", genre, genres) { genre = it }
-                FilterMenu("TV group", group, groups) { group = it }
-                FilterMenu("Rating", rating, listOf("All") + ContentRating.entries.map { it.label }) { rating = it }
-                if (year != "All" || genre != "All" || group != "All" || type != "All" || rating != "All") {
-                    AssistChip(onClick = { type = "All"; year = "All"; genre = "All"; group = "All"; rating = "All" }, label = { Text("Reset") }, leadingIcon = { Icon(Icons.Filled.RestartAlt, null) })
+            item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterMenu("Year", year, years) { year = it }
+                    FilterMenu("Type / Genre", genre, genres) { genre = it }
+                    FilterMenu("TV group", group, groups) { group = it }
+                    FilterMenu("Rating", rating, listOf("All") + ContentRating.entries.map { it.label }) { rating = it }
+                    FilterMenu("Country", country, countries) { country = it }
+                    if (year != "All" || genre != "All" || group != "All" || type != "All" || rating != "All" || country != "All") {
+                        AssistChip(onClick = { type = "All"; year = "All"; genre = "All"; group = "All"; rating = "All"; country = "All" }, label = { Text("Reset") }, leadingIcon = { Icon(Icons.Filled.RestartAlt, null) })
+                    }
                 }
             }
+            item { Text("${results.size} results", color = Muted, fontSize = 12.sp) }
+            if (results.isEmpty()) item { EmptyCard("No matching content. Try removing a filter.") }
+            items(results, key = { it.id }) { item ->
+                val now = epgIndex.now(item.tvgId)
+                ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
+            }
         }
-        item { Text("${results.size} results", color = Muted, fontSize = 12.sp) }
-        if (results.isEmpty()) item { EmptyCard("No matching content. Try removing a filter.") }
-        items(results, key = { it.id }) { item ->
-            val now = epgIndex.now(item.tvgId)
-            ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
-        }
+        FastScrollbar(searchListState, results.size, Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -802,6 +824,55 @@ private fun SettingsScreen(
             }
         }
         item { Text("NovaStream-TV", color = Muted, fontSize = 12.sp) }
+    }
+}
+
+@Composable
+private fun FastScrollbar(listState: LazyListState, itemCount: Int, modifier: Modifier = Modifier) {
+    if (itemCount <= 1) return
+    val scope = rememberCoroutineScope()
+    var trackHeightPx by remember { mutableFloatStateOf(0f) }
+    val layoutInfo = listState.layoutInfo
+    val visibleCount = layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
+    if (visibleCount >= itemCount) return // whole list fits on screen, no need for a scrollbar
+    val maxFirstIndex = (itemCount - visibleCount).coerceAtLeast(1)
+    val thumbFraction = (visibleCount.toFloat() / itemCount).coerceIn(0.08f, 1f)
+    val thumbHeightPx = trackHeightPx * thumbFraction
+    val progress = (listState.firstVisibleItemIndex.toFloat() / maxFirstIndex).coerceIn(0f, 1f)
+    val thumbOffsetPx = ((trackHeightPx - thumbHeightPx) * progress).coerceAtLeast(0f)
+
+    Box(
+        modifier
+            .fillMaxHeight()
+            .width(28.dp)
+            .onGloballyPositioned { trackHeightPx = it.size.height.toFloat() }
+            .pointerInput(itemCount, maxFirstIndex) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        if (trackHeightPx > 0f) {
+                            val target = ((offset.y / trackHeightPx) * maxFirstIndex).toInt().coerceIn(0, itemCount - 1)
+                            scope.launch { listState.scrollToItem(target) }
+                        }
+                    }
+                ) { change, _ ->
+                    change.consume()
+                    if (trackHeightPx > 0f) {
+                        val target = ((change.position.y / trackHeightPx) * maxFirstIndex).toInt().coerceIn(0, itemCount - 1)
+                        scope.launch { listState.scrollToItem(target) }
+                    }
+                }
+            }
+    ) {
+        val thumbHeightDp = with(LocalDensity.current) { thumbHeightPx.toDp() }.coerceAtLeast(28.dp)
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .offset { IntOffset(0, thumbOffsetPx.toInt()) }
+                .padding(end = 4.dp)
+                .width(6.dp)
+                .height(thumbHeightDp)
+                .background(Accent.copy(alpha = .75f), RoundedCornerShape(3.dp))
+        )
     }
 }
 
