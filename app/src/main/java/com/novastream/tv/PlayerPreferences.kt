@@ -13,4 +13,7 @@ class PlayerPreferences(context: Context) {
     var autoRetry: Boolean
         get() = prefs.getBoolean("auto_retry", true)
         set(value) = prefs.edit().putBoolean("auto_retry", value).apply()
+    var audioPreset: AudioPreset
+        get() = runCatching { AudioPreset.valueOf(prefs.getString("audio_preset", AudioPreset.NORMAL.name)!!) }.getOrDefault(AudioPreset.NORMAL)
+        set(value) = prefs.edit().putString("audio_preset", value.name).apply()
 }
