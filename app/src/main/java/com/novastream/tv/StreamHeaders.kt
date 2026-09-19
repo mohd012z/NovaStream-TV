@@ -39,11 +39,12 @@ object StreamPlayerFactory {
         }
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                8_000,  // keep enough media for temporary signal drops, without over-buffering before start
-                50_000,
-                500,    // start playback as soon as a small amount of media is ready
-                1_000   // resume quickly after a rebuffer instead of refilling a large buffer first
+                6_000,  // keep enough media for temporary signal drops, without over-buffering before start
+                40_000,
+                350,    // start playback as soon as a small amount of media is ready
+                750     // resume quickly after a rebuffer instead of refilling a large buffer first
             ).setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(15_000, true) // trim old buffered media so seeking/rebuffering stays cheap
             .build()
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
