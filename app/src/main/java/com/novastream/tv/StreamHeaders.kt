@@ -20,8 +20,8 @@ object StreamPlayerFactory {
         item.referer?.takeIf { it.isNotBlank() }?.let { headers["Referer"] = it }
         val http = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
-            .setConnectTimeoutMs(6_000)
-            .setReadTimeoutMs(12_000)
+            .setConnectTimeoutMs(5_000)
+            .setReadTimeoutMs(10_000)
             .setAllowCrossProtocolRedirects(true)
             .apply { item.userAgent?.takeIf { it.isNotBlank() }?.let { setUserAgent(it) } }
 
@@ -39,10 +39,10 @@ object StreamPlayerFactory {
         }
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                12_000, // keep enough media for temporary signal drops
+                8_000,  // keep enough media for temporary signal drops, without over-buffering before start
                 50_000,
-                1_000,  // start quickly
-                2_000   // resume quickly after rebuffer
+                500,    // start playback as soon as a small amount of media is ready
+                1_000   // resume quickly after a rebuffer instead of refilling a large buffer first
             ).setPrioritizeTimeOverSizeThresholds(true)
             .build()
         val renderers = DefaultRenderersFactory(context)
