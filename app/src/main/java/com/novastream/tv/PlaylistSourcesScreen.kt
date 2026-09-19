@@ -54,6 +54,7 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
     var editing by remember { mutableStateOf<PlaylistSource?>(null) }
     var status by remember { mutableStateOf("") }
     var busyId by remember { mutableStateOf<String?>(null) }
+    var addingAll by remember { mutableStateOf(false) }
 
     fun reload() { sources = store.all() }
 
@@ -69,6 +70,29 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
                         Text("Playlists", fontSize = 28.sp, fontWeight = FontWeight.Black)
                         Text("${sources.size} saved sources • ${sources.sumOf { it.itemCount }} indexed items", color = SourceMuted)
                     }
+                    if (addingAll) CircularProgressIndicator(Modifier.size(22.dp).padding(end = 6.dp), strokeWidth = 2.dp)
+                    IconButton(enabled = !addingAll, onClick = {
+                        scope.launch {
+                            addingAll = true
+                            val existingUrls = sources.map { it.url }.toSet()
+                            val missing = publicPresets.filter { it.url !in existingUrls }
+                            for (preset in missing) {
+                                status = "Adding ${preset.name}…"
+                                val result = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(preset.url) }
+                                if (result.ok) {
+                                    val count = withContext(Dispatchers.Default) { M3uParser.parse(result.body).size }
+                                    if (count > 0) {
+                                        store.create(preset.name, preset.url, result.body, count)
+                                    }
+                                }
+                            }
+                            store.rebuildLibrary(repo)
+                            reload()
+                            onLibraryChanged()
+                            status = if (missing.isEmpty()) "All suggested playlists already added" else "Added ${missing.size} suggested playlists"
+                            addingAll = false
+                        }
+                    }) { Icon(Icons.Filled.PlaylistAdd, "Add all suggested playlists", tint = SourceAccent) }
                     IconButton(onClick = {
                         sources.filter { it.url.startsWith("http") }.forEach { source ->
                             scope.launch {
