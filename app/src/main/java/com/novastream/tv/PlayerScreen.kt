@@ -45,7 +45,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var message by remember { mutableStateOf("Connecting…") }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
-    var showTrackInfo by remember { mutableStateOf(false) }\n    var showSpeed by remember { mutableStateOf(false) }
+    var showTrackInfo by remember { mutableStateOf(false) }\n    var showSpeed by remember { mutableStateOf(false) }\n    var showQuality by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var feedback by remember { mutableStateOf<GestureFeedback?>(null) }
     var isPlaying by remember { mutableStateOf(false) }\n    var isMuted by remember { mutableStateOf(false) }\n    var previousVolume by remember { mutableFloatStateOf(1f) }\n    var videoInfo by remember { mutableStateOf("Auto quality") }\n    var signalInfo by remember { mutableStateOf("Adaptive") }
@@ -176,7 +176,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     }
                 },
                 onTracks = { showTrackInfo = true },
-                onSpeed = { showSpeed = true },
+                onSpeed = { showSpeed = true },\n                onQuality = { showQuality = true },
                 onPip = {
                     activity.enterPictureInPictureMode(
                         PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
@@ -210,6 +210,32 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         feedback?.let { value ->
             GestureHud(value, Modifier.align(Alignment.Center))
         }
+    }
+
+    if (showQuality) {
+        val options = listOf("Auto" to Int.MAX_VALUE, "1080p" to 1080, "720p" to 720, "480p" to 480, "360p • Data saver" to 360)
+        AlertDialog(
+            onDismissRequest = { showQuality = false },
+            title = { Text("Video quality") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Auto adapts to your connection and is recommended.", color = Color.Gray, fontSize = 12.sp)
+                    options.forEach { (label, height) ->
+                        TextButton(
+                            onClick = {
+                                built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                                    .setMaxVideoSize(Int.MAX_VALUE, height)
+                                    .setForceHighestSupportedBitrate(height != Int.MAX_VALUE)
+                                    .build()
+                                showQuality = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(label) }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
     }
 
     if (showSpeed) {
