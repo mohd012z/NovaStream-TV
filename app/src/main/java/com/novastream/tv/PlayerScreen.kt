@@ -4,7 +4,9 @@ import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.pm.ActivityInfo
 import android.os.Handler
-import android.os.Looper\nimport android.os.Build\nimport android.view.Surface
+import android.os.Looper
+import android.os.Build
+import android.view.Surface
 import android.util.Rational
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -30,7 +32,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.C\nimport androidx.media3.common.Format\nimport androidx.media3.common.Tracks\nimport androidx.media3.common.PlaybackException
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.Tracks
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -45,10 +50,16 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var message by remember { mutableStateOf("Connecting…") }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
-    var showTrackInfo by remember { mutableStateOf(false) }\n    var showSpeed by remember { mutableStateOf(false) }\n    var showQuality by remember { mutableStateOf(false) }
+    var showTrackInfo by remember { mutableStateOf(false) }
+    var showSpeed by remember { mutableStateOf(false) }
+    var showQuality by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var feedback by remember { mutableStateOf<GestureFeedback?>(null) }
-    var isPlaying by remember { mutableStateOf(false) }\n    var isMuted by remember { mutableStateOf(false) }\n    var previousVolume by remember { mutableFloatStateOf(1f) }\n    var videoInfo by remember { mutableStateOf("Auto quality") }\n    var signalInfo by remember { mutableStateOf("Adaptive") }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isMuted by remember { mutableStateOf(false) }
+    var previousVolume by remember { mutableFloatStateOf(1f) }
+    var videoInfo by remember { mutableStateOf("Auto quality") }
+    var signalInfo by remember { mutableStateOf("Adaptive") }
     val handler = remember { Handler(Looper.getMainLooper()) }
 
     val built = remember(item.id) { StreamPlayerFactory.buildAdaptive(context, item) }
@@ -176,7 +187,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     }
                 },
                 onTracks = { showTrackInfo = true },
-                onSpeed = { showSpeed = true },\n                onQuality = { showQuality = true },
+                onSpeed = { showSpeed = true },
+                onQuality = { showQuality = true },
                 onPip = {
                     activity.enterPictureInPictureMode(
                         PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build()
@@ -286,6 +298,7 @@ private fun PlayerChrome(
     onMute: () -> Unit,
     onTracks: () -> Unit,
     onSpeed: () -> Unit,
+    onQuality: () -> Unit,
     onPip: () -> Unit,
     onRotate: () -> Unit
 ) {
