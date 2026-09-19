@@ -145,7 +145,7 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
                             AppPage.SOURCES -> PlaylistSourcesScreen(repo, onLibraryChanged = { libraryVersion++ })
                             AppPage.DOWNLOADS -> DownloadsScreen()
-                            AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }) { libraryVersion++ }
+                            AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }, navigate = { page = it }) { libraryVersion++ }
                         }
                     }
                 }
@@ -199,7 +199,6 @@ private fun BottomBar(current: AppPage, onSelect: (AppPage) -> Unit) {
         listOf(
             Triple(AppPage.HOME, "Home", Icons.Filled.Home),
             Triple(AppPage.LIVE, "Live", Icons.Filled.LiveTv),
-            Triple(AppPage.SOURCES, "Playlists", Icons.Filled.PlaylistPlay),
             Triple(AppPage.SEARCH, "Search", Icons.Filled.Search),
             Triple(AppPage.HISTORY, "History", Icons.Filled.History)
         ).forEach { (page, label, icon) ->
@@ -683,11 +682,23 @@ private fun DownloadsScreen() {
 }
 
 @Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
 private fun SettingsScreen(
     repo: LibraryRepository,
     playlist: List<PlaylistItem>,
     epg: List<EpgProgramme>,
     onAppearanceChanged: () -> Unit,
+    navigate: (AppPage) -> Unit,
     onLibraryChanged: () -> Unit
 ) {
     val context = LocalContext.current
@@ -726,6 +737,13 @@ private fun SettingsScreen(
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Settings", fontSize = 28.sp, fontWeight = FontWeight.Black) }
         item { Text("${playlist.size} playlist items • ${epg.size} EPG programmes", color = Muted) }
+
+        item { SectionLabel("PLAYLISTS") }
+        item {
+            GlassRow(onClick = { navigate(AppPage.SOURCES) }) {
+                Icon(Icons.Filled.PlaylistPlay, null, tint = Accent); Spacer(Modifier.width(12.dp)); Text("Manage playlists", fontWeight = FontWeight.SemiBold)
+            }
+        }
         item {
             GlassRow(onClick = { m3uLauncher.launch(arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain", "*/*")) }) {
                 Icon(Icons.Filled.PlaylistAdd, null, tint = Accent); Spacer(Modifier.width(12.dp)); Text("Import local M3U", fontWeight = FontWeight.SemiBold)
@@ -764,7 +782,7 @@ private fun SettingsScreen(
         }
         if (status.isNotBlank()) item { Text(status, color = Accent2) }
 
-        item { Text("Appearance", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+        item { SectionLabel("APPEARANCE") }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Colour template", color = Muted)
@@ -799,7 +817,8 @@ private fun SettingsScreen(
                 Text("Changes are applied instantly and saved for the next launch.", color = Accent2, fontSize = 11.sp)
             }
         }
-        item { Text("Player gestures", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+
+        item { SectionLabel("PLAYBACK") }
         item {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Filled.Brightness6, null, tint = Accent); Spacer(Modifier.width(8.dp)); Text("Brightness sensitivity ${(brightness * 100).toInt()}%") }
@@ -818,6 +837,8 @@ private fun SettingsScreen(
                 Spacer(Modifier.width(10.dp)); Text("Auto retry playback")
             }
         }
+
+        item { SectionLabel("DATA") }
         item {
             OutlinedButton(onClick = { repo.clear(); onLibraryChanged(); status = "Library cleared" }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.DeleteSweep, null); Spacer(Modifier.width(8.dp)); Text("Clear library")
