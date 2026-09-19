@@ -66,6 +66,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var previousVolume by remember { mutableFloatStateOf(1f) }
     var videoInfo by remember { mutableStateOf("Auto quality") }
     var signalInfo by remember { mutableStateOf("Adaptive") }
+    var currentPositionMs by remember { mutableLongStateOf(0L) }
+    var durationMs by remember { mutableLongStateOf(0L) }
     val handler = remember { Handler(Looper.getMainLooper()) }
 
     val built = remember(item.id) { StreamPlayerFactory.buildAdaptive(context, item) }
@@ -84,6 +86,14 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         if (showControls && message.isBlank()) {
             delay(3500)
             showControls = false
+        }
+    }
+
+    LaunchedEffect(player) {
+        while (true) {
+            currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+            durationMs = player.duration.takeIf { it > 0 } ?: 0L
+            delay(500)
         }
     }
 
@@ -149,6 +159,13 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         }
     }
 
+    fun seekTo(positionMs: Long) {
+        if (item.kind != MediaKind.LIVE && player.isCurrentMediaItemSeekable) {
+            player.seekTo(positionMs.coerceIn(0L, player.duration.coerceAtLeast(0L)))
+            currentPositionMs = positionMs
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -181,6 +198,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 isPlaying = isPlaying,
                 videoInfo = videoInfo,
                 signalInfo = signalInfo,
+                currentPositionMs = currentPositionMs,
+                durationMs = durationMs,
+                onSeekTo = { seekTo(it) },
                 onBack = onBack,
                 onPlayPause = { if (player.isPlaying) player.pause() else player.play() },
                 onSeekBack = { seekBy(-10_000) },
@@ -387,6 +407,9 @@ private fun PlayerChrome(
     isPlaying: Boolean,
     videoInfo: String,
     signalInfo: String,
+    currentPositionMs: Long,
+    durationMs: Long,
+    onSeekTo: (Long) -> Unit,
     isMuted: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
@@ -400,38 +423,25 @@ private fun PlayerChrome(
     onPip: () -> Unit,
     onRotate: () -> Unit
 ) {
+    var isSeeking by remember { mutableStateOf(false) }
+    var seekPreviewMs by remember { mutableFloatStateOf(0f) }
+    var settingsExpanded by remember { mutableStateOf(false) }
+    val seekable = item.kind != MediaKind.LIVE && durationMs > 0
+    val displayedPositionMs = if (isSeeking) seekPreviewMs.toLong() else currentPositionMs
+
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .18f))) {
-        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                PlayerCircleButton(Icons.Filled.ArrowBack, "Back", onBack)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(item.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        (if (item.kind == MediaKind.LIVE) "LIVE" else item.groupTitle.orEmpty()) + " • " + videoInfo + " • " + signalInfo,
-                        color = Color(0xFF78F1C7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                PlayerCircleButton(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, if (isMuted) "Unmute" else "Mute", onMute)
-                Spacer(Modifier.width(8.dp))
-                PlayerCircleButton(Icons.Filled.ClosedCaption, "Subtitles", onSubtitles)
-                Spacer(Modifier.width(8.dp))
-                PlayerCircleButton(Icons.Filled.Audiotrack, "Audio track", onAudio)
-                Spacer(Modifier.width(8.dp))
-                PlayerCircleButton(Icons.Filled.HighQuality, "Video quality", onQuality)
-                Spacer(Modifier.width(8.dp))
-                if (item.kind != MediaKind.LIVE) {
-                    PlayerCircleButton(Icons.Filled.Speed, "Playback speed", onSpeed)
-                    Spacer(Modifier.width(8.dp))
-                }
-                PlayerCircleButton(Icons.Filled.PictureInPictureAlt, "Mini player", onPip)
-                Spacer(Modifier.width(8.dp))
-                PlayerCircleButton(Icons.Filled.ScreenRotation, "Rotate", onRotate)
+        Row(
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PlayerCircleButton(Icons.Filled.ArrowBack, "Back", onBack)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    (if (item.kind == MediaKind.LIVE) "LIVE" else item.groupTitle.orEmpty()) + " • " + videoInfo + " • " + signalInfo,
+                    color = Color(0xFF78F1C7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
             }
         }
 
@@ -462,7 +472,7 @@ private fun PlayerChrome(
 
         if (item.kind == MediaKind.LIVE) {
             Row(
-                Modifier.align(Alignment.BottomStart).padding(18.dp),
+                Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(Modifier.size(8.dp).background(Color.Red, CircleShape))
@@ -472,7 +482,79 @@ private fun PlayerChrome(
                 Text("Swipe left: brightness • right: volume", color = Color.White.copy(alpha = .7f), fontSize = 11.sp)
             }
         }
+
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Box {
+                    PlayerCircleButton(Icons.Filled.Settings, "Playback settings", { settingsExpanded = true })
+                    DropdownMenu(expanded = settingsExpanded, onDismissRequest = { settingsExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (isMuted) "Unmute" else "Mute") },
+                            leadingIcon = { Icon(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, null) },
+                            onClick = { settingsExpanded = false; onMute() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Subtitles") },
+                            leadingIcon = { Icon(Icons.Filled.ClosedCaption, null) },
+                            onClick = { settingsExpanded = false; onSubtitles() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Audio track") },
+                            leadingIcon = { Icon(Icons.Filled.Audiotrack, null) },
+                            onClick = { settingsExpanded = false; onAudio() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Video quality") },
+                            leadingIcon = { Icon(Icons.Filled.HighQuality, null) },
+                            onClick = { settingsExpanded = false; onQuality() }
+                        )
+                        if (item.kind != MediaKind.LIVE) {
+                            DropdownMenuItem(
+                                text = { Text("Playback speed") },
+                                leadingIcon = { Icon(Icons.Filled.Speed, null) },
+                                onClick = { settingsExpanded = false; onSpeed() }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Mini player") },
+                            leadingIcon = { Icon(Icons.Filled.PictureInPictureAlt, null) },
+                            onClick = { settingsExpanded = false; onPip() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Rotate") },
+                            leadingIcon = { Icon(Icons.Filled.ScreenRotation, null) },
+                            onClick = { settingsExpanded = false; onRotate() }
+                        )
+                    }
+                }
+            }
+
+            if (seekable) {
+                Spacer(Modifier.height(4.dp))
+                Slider(
+                    value = displayedPositionMs.toFloat().coerceIn(0f, durationMs.toFloat()),
+                    onValueChange = { isSeeking = true; seekPreviewMs = it },
+                    onValueChangeFinished = { onSeekTo(seekPreviewMs.toLong()); isSeeking = false },
+                    valueRange = 0f..durationMs.toFloat(),
+                    colors = SliderDefaults.colors(thumbColor = Color(0xFF67D6FF), activeTrackColor = Color(0xFF67D6FF))
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(formatPlaybackTime(displayedPositionMs), color = Color.White, fontSize = 12.sp)
+                    Text("-" + formatPlaybackTime((durationMs - displayedPositionMs).coerceAtLeast(0)), color = Color.White.copy(alpha = .7f), fontSize = 12.sp)
+                }
+            }
+        }
     }
+}
+
+private fun formatPlaybackTime(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
 }
 
 @Composable
