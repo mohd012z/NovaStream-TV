@@ -32,8 +32,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +65,10 @@ enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, SOURCES, DOWNL
 @Composable
 fun NovaStreamApp(activity: MainActivity) {
     val context = LocalContext.current
-    val repo = remember { LibraryRepository(context) }\n    val sourceStore = remember { PlaylistSourceStore(context) }\n    val appearance = remember { AppearancePreferences(context) }\n    var appearanceVersion by remember { mutableIntStateOf(0) }
+    val repo = remember { LibraryRepository(context) }
+    val sourceStore = remember { PlaylistSourceStore(context) }
+    val appearance = remember { AppearancePreferences(context) }
+    var appearanceVersion by remember { mutableIntStateOf(0) }
     var showSplash by remember { mutableStateOf(true) }
     var selectedOrientation by remember { mutableStateOf<OrientationChoice?>(OrientationChoice.AUTO) }
     var page by remember { mutableStateOf(AppPage.HOME) }
@@ -92,7 +97,10 @@ fun NovaStreamApp(activity: MainActivity) {
         loadingLibrary = false
     }
 
-    val epgIndex = remember(epg) { EpgIndex(epg) }\n    val selectedTheme = remember(appearanceVersion) { appearance.theme }\n    val selectedFont = remember(appearanceVersion) { appearance.font }\n    val palette = remember(selectedTheme) { paletteFor(selectedTheme) }
+    val epgIndex = remember(epg) { EpgIndex(epg) }
+    val selectedTheme = remember(appearanceVersion) { appearance.theme }
+    val selectedFont = remember(appearanceVersion) { appearance.font }
+    val palette = remember(selectedTheme) { paletteFor(selectedTheme) }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -127,7 +135,8 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.MOVIES -> MediaLibraryScreen("Movies", playlist.filter { it.kind == MediaKind.MOVIE }, epgIndex) { playing = it }
                             AppPage.SERIES -> MediaLibraryScreen("Series", playlist.filter { it.kind == MediaKind.SERIES }, epgIndex) { playing = it }
                             AppPage.SEARCH -> SearchScreen(playlist, epgIndex) { playing = it }
-                            AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }\n                            AppPage.SOURCES -> PlaylistSourcesScreen(onLibraryChanged = { libraryVersion++ })
+                            AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
+                            AppPage.SOURCES -> PlaylistSourcesScreen(onLibraryChanged = { libraryVersion++ })
                             AppPage.DOWNLOADS -> DownloadsScreen()
                             AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }) { libraryVersion++ }
                         }
@@ -345,7 +354,8 @@ private fun HomeScreen(
             item { SectionHeader("Series", "See all") { navigate(AppPage.SERIES) } }
             item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(series, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
         }
-\n        if (movies.isNotEmpty()) {
+
+        if (movies.isNotEmpty()) {
             item { SectionHeader("Movies", "See all") { navigate(AppPage.MOVIES) } }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -364,6 +374,23 @@ private fun BrandMark(size: androidx.compose.ui.unit.Dp) {
             .border(1.dp, Color.White.copy(alpha = .30f), RoundedCornerShape(18.dp)),
         contentAlignment = Alignment.Center
     ) { Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.fillMaxSize(.68f)) }
+}
+
+@Composable
+private fun QuickAction(label: String, icon: ImageVector, onClick: () -> Unit) {
+    Surface(
+        Modifier.width(84.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = Panel2
+    ) {
+        Column(Modifier.padding(vertical = 14.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(36.dp).clip(CircleShape).background(Accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = Accent)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }
 
 @Composable
@@ -423,7 +450,8 @@ private fun PosterChannelCard(item: PlaylistItem, now: EpgProgramme?, onClick: (
 
 @Composable
 private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
-    var group by remember { mutableStateOf("All") }\n    var rating by remember { mutableStateOf("All") }
+    var group by remember { mutableStateOf("All") }
+    var rating by remember { mutableStateOf("All") }
     val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().take(20) }
     val filtered = remember(items, group) { if (group == "All") items else items.filter { it.groupTitle == group } }
 
@@ -503,6 +531,7 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
     var year by remember { mutableStateOf("All") }
     var genre by remember { mutableStateOf("All") }
     var group by remember { mutableStateOf("All") }
+    var rating by remember { mutableStateOf("All") }
 
     fun inferredYear(item: PlaylistItem): Int? =
         item.year ?: Regex("""\b(19|20)\d{2}\b""").find(item.name)?.value?.toIntOrNull()
@@ -536,7 +565,8 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
             val yearMatch = year == "All" || inferredYear(item)?.toString() == year
             val genreMatch = genre == "All" || inferredGenre(item).equals(genre, true)
             val groupMatch = group == "All" || item.groupTitle.orEmpty().equals(group, true)
-            textMatch && typeMatch && yearMatch && genreMatch && groupMatch
+            val ratingMatch = rating == "All" || item.contentRating.label == rating
+            textMatch && typeMatch && yearMatch && genreMatch && groupMatch && ratingMatch
         }.take(300).toList()
     }
 
@@ -564,7 +594,8 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterMenu("Year", year, years) { year = it }
                 FilterMenu("Type / Genre", genre, genres) { genre = it }
-                FilterMenu("TV group", group, groups) { group = it }\n                FilterMenu("Rating", rating, listOf("All") + ContentRating.entries.map { it.label }) { rating = it }
+                FilterMenu("TV group", group, groups) { group = it }
+                FilterMenu("Rating", rating, listOf("All") + ContentRating.entries.map { it.label }) { rating = it }
                 if (year != "All" || genre != "All" || group != "All" || type != "All" || rating != "All") {
                     AssistChip(onClick = { type = "All"; year = "All"; genre = "All"; group = "All"; rating = "All" }, label = { Text("Reset") }, leadingIcon = { Icon(Icons.Filled.RestartAlt, null) })
                 }
@@ -639,11 +670,17 @@ private fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember { PlayerPreferences(context) }\n    val appearance = remember { AppearancePreferences(context) }\n    var themePreset by remember { mutableStateOf(appearance.theme) }\n    var fontPreset by remember { mutableStateOf(appearance.font) }\n    var iconPreset by remember { mutableStateOf(appearance.iconStyle) }\n    var compactCards by remember { mutableStateOf(appearance.compactCards) }
+    val prefs = remember { PlayerPreferences(context) }
+    val appearance = remember { AppearancePreferences(context) }
+    var themePreset by remember { mutableStateOf(appearance.theme) }
+    var fontPreset by remember { mutableStateOf(appearance.font) }
+    var iconPreset by remember { mutableStateOf(appearance.iconStyle) }
+    var compactCards by remember { mutableStateOf(appearance.compactCards) }
     var status by remember { mutableStateOf("") }
     var brightness by remember { mutableFloatStateOf(prefs.brightnessSensitivity) }
     var volume by remember { mutableFloatStateOf(prefs.volumeSensitivity) }
-    var autoRetry by remember { mutableStateOf(prefs.autoRetry) }\n    var showM3uUrlDialog by remember { mutableStateOf(false) }
+    var autoRetry by remember { mutableStateOf(prefs.autoRetry) }
+    var showM3uUrlDialog by remember { mutableStateOf(false) }
 
     val m3uLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
