@@ -9,7 +9,7 @@ data class PlaylistItem(
     val tvgId: String? = null,
     val tvgName: String? = null,
     val logoUrl: String? = null,
-    val groupTitle: String? = null,
+    val groupTitle: String? = null,\n    val year: Int? = null,\n    val genre: String? = null,\n    val country: String? = null,
     val userAgent: String? = null,
     val referer: String? = null,
     val kind: MediaKind = MediaKind.UNKNOWN
