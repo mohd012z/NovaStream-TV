@@ -32,12 +32,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.Tracks
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
@@ -50,9 +54,11 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var message by remember { mutableStateOf("Connecting…") }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
-    var showTrackInfo by remember { mutableStateOf(false) }
+    var showSubtitles by remember { mutableStateOf(false) }
+    var showAudioTracks by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
     var showQuality by remember { mutableStateOf(false) }
+    var selectedQualityLabel by remember { mutableStateOf("Auto") }
     var showControls by remember { mutableStateOf(true) }
     var feedback by remember { mutableStateOf<GestureFeedback?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
@@ -190,7 +196,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                         isMuted = true
                     }
                 },
-                onTracks = { showTrackInfo = true },
+                onSubtitles = { showSubtitles = true },
+                onAudio = { showAudioTracks = true },
                 onSpeed = { showSpeed = true },
                 onQuality = { showQuality = true },
                 onPip = {
@@ -243,10 +250,16 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                                     .setMaxVideoSize(Int.MAX_VALUE, height)
                                     .setForceHighestSupportedBitrate(height != Int.MAX_VALUE)
                                     .build()
+                                selectedQualityLabel = label
                                 showQuality = false
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text(label) }
+                        ) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(label, modifier = Modifier.weight(1f))
+                                if (selectedQualityLabel == label) Icon(Icons.Filled.Check, null, tint = Color(0xFF67D6FF))
+                            }
+                        }
                     }
                 }
             },
@@ -273,19 +286,97 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         )
     }
 
-    if (showTrackInfo) {
+    if (showSubtitles) {
+        val textGroups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
         AlertDialog(
-            onDismissRequest = { showTrackInfo = false },
-            title = { Text("Audio / Subtitle / Quality") },
+            onDismissRequest = { showSubtitles = false },
+            title = { Text("Subtitles") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Auto quality is active: the player selects the best variant the connection can sustain.")
-                    Text("Current video: $videoInfo")
-                    Text("Available track groups: ${player.currentTracks.groups.size}")
-                    Text("Track selector UI will show only options actually supplied by this stream.", color = Color.Gray)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                .build()
+                            showSubtitles = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Off") }
+                    if (textGroups.isEmpty()) {
+                        Text("This stream doesn't provide any subtitle tracks.", color = Color.Gray, fontSize = 12.sp)
+                    }
+                    textGroups.forEach { group ->
+                        for (i in 0 until group.length) {
+                            val format = group.getTrackFormat(i)
+                            val label = format.label ?: format.language?.uppercase() ?: "Subtitle"
+                            TextButton(
+                                onClick = {
+                                    built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
+                                        .build()
+                                    showSubtitles = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(label) }
+                        }
+                    }
                 }
             },
-            confirmButton = { TextButton(onClick = { showTrackInfo = false }) { Text("OK") } }
+            confirmButton = {}
+        )
+    }
+
+    if (showAudioTracks) {
+        val audioGroups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
+        AlertDialog(
+            onDismissRequest = { showAudioTracks = false },
+            title = { Text("Audio track") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                .build()
+                            showAudioTracks = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Auto") }
+                    if (audioGroups.isEmpty()) {
+                        Text("This stream doesn't expose separate audio tracks to choose from.", color = Color.Gray, fontSize = 12.sp)
+                    }
+                    audioGroups.forEach { group ->
+                        for (i in 0 until group.length) {
+                            val format = group.getTrackFormat(i)
+                            val mime = format.codecs ?: format.sampleMimeType.orEmpty()
+                            val surround = when {
+                                mime.contains("ac-4", true) || mime.contains("atmos", true) -> " • Dolby Atmos"
+                                mime.contains("eac3", true) || mime.contains("ec-3", true) -> " • Dolby Digital Plus"
+                                mime.contains("ac-3", true) -> " • Dolby Digital"
+                                format.channelCount >= 6 -> " • ${format.channelCount}ch surround"
+                                else -> ""
+                            }
+                            val base = format.label ?: format.language?.uppercase() ?: "Track ${i + 1}"
+                            TextButton(
+                                onClick = {
+                                    built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
+                                        .build()
+                                    showAudioTracks = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(base + surround) }
+                        }
+                    }
+                    Text(
+                        "Dolby/Atmos options only appear when the stream itself provides that audio track and the device supports passthrough.",
+                        color = Color.Gray, fontSize = 11.sp
+                    )
+                }
+            },
+            confirmButton = {}
         )
     }
 }
@@ -302,37 +393,46 @@ private fun PlayerChrome(
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
     onMute: () -> Unit,
-    onTracks: () -> Unit,
+    onSubtitles: () -> Unit,
+    onAudio: () -> Unit,
     onSpeed: () -> Unit,
     onQuality: () -> Unit,
     onPip: () -> Unit,
     onRotate: () -> Unit
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .18f))) {
-        Row(
-            Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PlayerCircleButton(Icons.Filled.ArrowBack, "Back", onBack)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    (if (item.kind == MediaKind.LIVE) "LIVE" else item.groupTitle.orEmpty()) + " • " + videoInfo + " • " + signalInfo,
-                    color = Color(0xFF78F1C7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
+        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                PlayerCircleButton(Icons.Filled.ArrowBack, "Back", onBack)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        (if (item.kind == MediaKind.LIVE) "LIVE" else item.groupTitle.orEmpty()) + " • " + videoInfo + " • " + signalInfo,
+                        color = Color(0xFF78F1C7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-            PlayerCircleButton(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, if (isMuted) "Unmute" else "Mute", onMute)
-            Spacer(Modifier.width(8.dp))
-            PlayerCircleButton(Icons.Filled.Tune, "Audio, subtitles and quality", onTracks)
-            Spacer(Modifier.width(8.dp))
-            if (item.kind != MediaKind.LIVE) {
-                PlayerCircleButton(Icons.Filled.Speed, "Playback speed", onSpeed)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlayerCircleButton(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, if (isMuted) "Unmute" else "Mute", onMute)
                 Spacer(Modifier.width(8.dp))
+                PlayerCircleButton(Icons.Filled.ClosedCaption, "Subtitles", onSubtitles)
+                Spacer(Modifier.width(8.dp))
+                PlayerCircleButton(Icons.Filled.Audiotrack, "Audio track", onAudio)
+                Spacer(Modifier.width(8.dp))
+                PlayerCircleButton(Icons.Filled.HighQuality, "Video quality", onQuality)
+                Spacer(Modifier.width(8.dp))
+                if (item.kind != MediaKind.LIVE) {
+                    PlayerCircleButton(Icons.Filled.Speed, "Playback speed", onSpeed)
+                    Spacer(Modifier.width(8.dp))
+                }
+                PlayerCircleButton(Icons.Filled.PictureInPictureAlt, "Mini player", onPip)
+                Spacer(Modifier.width(8.dp))
+                PlayerCircleButton(Icons.Filled.ScreenRotation, "Rotate", onRotate)
             }
-            PlayerCircleButton(Icons.Filled.PictureInPictureAlt, "Mini player", onPip)
-            Spacer(Modifier.width(8.dp))
-            PlayerCircleButton(Icons.Filled.ScreenRotation, "Rotate", onRotate)
         }
 
         Row(
