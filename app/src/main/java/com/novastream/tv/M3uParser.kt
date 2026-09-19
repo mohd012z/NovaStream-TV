@@ -38,6 +38,7 @@ object M3uParser {
                         groupTitle = group,
                         userAgent = parsedUrl.userAgent ?: pendingUserAgent,
                         referer = parsedUrl.referer ?: pendingReferer,
+                        country = attrs["tvg-country"]?.takeIf { it.isNotBlank() },
                         kind = kind
                     )
                     info = null
