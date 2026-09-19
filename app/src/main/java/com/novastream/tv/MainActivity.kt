@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class OrientationChoice { PORTRAIT, LANDSCAPE, AUTO }
-enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, DOWNLOADS, SETTINGS }
+enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, SOURCES, DOWNLOADS, SETTINGS }
 
 @Composable
 fun PerfectTvEnhancedApp(activity: MainActivity) {
