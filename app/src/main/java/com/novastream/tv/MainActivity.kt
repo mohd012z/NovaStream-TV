@@ -53,7 +53,7 @@ private val Muted = Color(0xFFA8B3C0)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PerfectTvEnhancedApp(this) }
+        setContent { NovaStreamApp(this) }
     }
 }
 
@@ -61,9 +61,9 @@ enum class OrientationChoice { PORTRAIT, LANDSCAPE, AUTO }
 enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, SOURCES, DOWNLOADS, SETTINGS }
 
 @Composable
-fun PerfectTvEnhancedApp(activity: MainActivity) {
+fun NovaStreamApp(activity: MainActivity) {
     val context = LocalContext.current
-    val repo = remember { LibraryRepository(context) }
+    val repo = remember { LibraryRepository(context) }\n    val sourceStore = remember { PlaylistSourceStore(context) }
     var showSplash by remember { mutableStateOf(true) }
     var selectedOrientation by remember { mutableStateOf<OrientationChoice?>(null) }
     var page by remember { mutableStateOf(AppPage.HOME) }
@@ -80,7 +80,13 @@ fun PerfectTvEnhancedApp(activity: MainActivity) {
 
     LaunchedEffect(libraryVersion) {
         loadingLibrary = true
-        val loaded = withContext(Dispatchers.IO) { repo.playlist() to repo.epg() }
+        val loaded = withContext(Dispatchers.IO) {
+            // First launch is zero-setup: seed the comprehensive public directory,
+            // then always rebuild one unified library from every saved source.
+            sourceStore.ensureDefaultSource(repo)
+            sourceStore.rebuildLibrary(repo)
+            repo.playlist() to repo.epg()
+        }
         playlist = loaded.first
         epg = loaded.second
         loadingLibrary = false
@@ -157,7 +163,7 @@ private fun BrandSplash() {
                 Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(58.dp))
             }
             Spacer(Modifier.height(20.dp))
-            Text("PerfectTV Enhanced", fontWeight = FontWeight.Black, fontSize = 28.sp, color = Color.White)
+            Text("NovaStream-TV", fontWeight = FontWeight.Black, fontSize = 28.sp, color = Color.White)
             Text("Fast • Visual • Smart Player", color = Accent2, fontSize = 13.sp)
         }
     }
@@ -240,8 +246,8 @@ private fun HomeScreen(
                 BrandMark(54.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("PerfectTV Enhanced", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text("Premium visual player", color = Accent2, fontSize = 12.sp)
+                    Text("NovaStream-TV", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("All your channels. One library.", color = Accent2, fontSize = 12.sp)
                 }
                 IconButton(onClick = { navigate(AppPage.SETTINGS) }) { Icon(Icons.Filled.Settings, "Settings", tint = Muted) }
             }
@@ -598,7 +604,7 @@ private fun SettingsScreen(
                 Icon(Icons.Filled.DeleteSweep, null); Spacer(Modifier.width(8.dp)); Text("Clear library")
             }
         }
-        item { Text("PerfectTV Enhanced v2.0", color = Muted, fontSize = 12.sp) }
+        item { Text("NovaStream-TV", color = Muted, fontSize = 12.sp) }
     }
 }
 
