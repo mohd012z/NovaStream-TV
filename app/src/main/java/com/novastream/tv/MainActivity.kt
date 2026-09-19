@@ -512,7 +512,7 @@ private fun SettingsScreen(
     var status by remember { mutableStateOf("") }
     var brightness by remember { mutableFloatStateOf(prefs.brightnessSensitivity) }
     var volume by remember { mutableFloatStateOf(prefs.volumeSensitivity) }
-    var autoRetry by remember { mutableStateOf(prefs.autoRetry) }
+    var autoRetry by remember { mutableStateOf(prefs.autoRetry) }\n    var showM3uUrlDialog by remember { mutableStateOf(false) }
 
     val m3uLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
