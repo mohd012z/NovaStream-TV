@@ -68,7 +68,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var signalInfo by remember { mutableStateOf("Adaptive") }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var showAudioEffects by remember { mutableStateOf(false) }
+    var audioPreset by remember { mutableStateOf(prefs.audioPreset) }
     val handler = remember { Handler(Looper.getMainLooper()) }
+    val audioEffects = remember(item.id) { mutableStateOf<AudioEffectsController?>(null) }
 
     val built = remember(item.id) { StreamPlayerFactory.buildAdaptive(context, item) }
     val player: ExoPlayer = built.player
@@ -93,6 +96,11 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         while (true) {
             currentPositionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0 } ?: 0L
+            if (audioEffects.value == null && player.audioSessionId != 0) {
+                val controller = runCatching { AudioEffectsController(player.audioSessionId) }.getOrNull()
+                controller?.apply(audioPreset)
+                audioEffects.value = controller
+            }
             delay(500)
         }
     }
@@ -145,6 +153,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 val p = player.currentPosition.coerceAtLeast(0L)
                 store.save(PlaybackRecord(item.id, item.name, p, d))
             }
+            audioEffects.value?.release()
             player.removeListener(listener)
             player.release()
         }
@@ -218,6 +227,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 },
                 onSubtitles = { showSubtitles = true },
                 onAudio = { showAudioTracks = true },
+                onSound = { showAudioEffects = true },
                 onSpeed = { showSpeed = true },
                 onQuality = { showQuality = true },
                 onPip = {
@@ -399,6 +409,38 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             confirmButton = {}
         )
     }
+
+    if (showAudioEffects) {
+        AlertDialog(
+            onDismissRequest = { showAudioEffects = false },
+            title = { Text("Sound") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "Built-in audio effects applied to this device's output. These enhance the existing stereo signal - they don't add channels a stream doesn't have.",
+                        color = Color.Gray, fontSize = 12.sp
+                    )
+                    AudioPreset.entries.forEach { preset ->
+                        TextButton(
+                            onClick = {
+                                audioPreset = preset
+                                prefs.audioPreset = preset
+                                audioEffects.value?.apply(preset)
+                                showAudioEffects = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(preset.label, modifier = Modifier.weight(1f))
+                                if (audioPreset == preset) Icon(Icons.Filled.Check, null, tint = Color(0xFF67D6FF))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
 }
 
 @Composable
@@ -418,6 +460,7 @@ private fun PlayerChrome(
     onMute: () -> Unit,
     onSubtitles: () -> Unit,
     onAudio: () -> Unit,
+    onSound: () -> Unit,
     onSpeed: () -> Unit,
     onQuality: () -> Unit,
     onPip: () -> Unit,
@@ -504,6 +547,11 @@ private fun PlayerChrome(
                             text = { Text("Audio track") },
                             leadingIcon = { Icon(Icons.Filled.Audiotrack, null) },
                             onClick = { settingsExpanded = false; onAudio() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sound") },
+                            leadingIcon = { Icon(Icons.Filled.GraphicEq, null) },
+                            onClick = { settingsExpanded = false; onSound() }
                         )
                         DropdownMenuItem(
                             text = { Text("Video quality") },
