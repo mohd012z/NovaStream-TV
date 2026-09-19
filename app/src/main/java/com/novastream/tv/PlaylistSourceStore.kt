@@ -17,6 +17,12 @@ data class PlaylistSource(
 )
 
 class PlaylistSourceStore(private val context: Context) {
+    companion object {
+        // One comprehensive public directory avoids duplicating the same channels
+        // across separate category playlists. Users can still add more sources later.
+        const val DEFAULT_NAME = "Public channels"
+        const val DEFAULT_URL = "https://iptv-org.github.io/iptv/index.m3u"
+    }
     private val prefs = context.getSharedPreferences("novastream_sources", Context.MODE_PRIVATE)
     private val dir = File(context.filesDir, "playlist_sources").apply { mkdirs() }
 
@@ -42,6 +48,8 @@ class PlaylistSourceStore(private val context: Context) {
         if (body != null) File(dir, "${source.id}.m3u").writeText(body)
     }
 
+    fun hasSources(): Boolean = all().isNotEmpty()
+
     fun create(name: String, url: String, body: String, count: Int): PlaylistSource {
         val source = PlaylistSource(UUID.randomUUID().toString(), name, url, count, System.currentTimeMillis(), true, "Ready")
         upsert(source, body)
@@ -54,6 +62,20 @@ class PlaylistSourceStore(private val context: Context) {
     }
 
     fun body(id: String): String = File(dir, "$id.m3u").takeIf { it.exists() }?.readText().orEmpty()
+
+    fun ensureDefaultSource(repo: LibraryRepository): Boolean {
+        if (hasSources()) {
+            rebuildLibrary(repo)
+            return false
+        }
+        val result = RemoteSourceLoader.fetch(DEFAULT_URL)
+        if (!result.ok) return false
+        val count = runCatching { M3uParser.parse(result.body).size }.getOrDefault(0)
+        if (count <= 0) return false
+        create(DEFAULT_NAME, DEFAULT_URL, result.body, count)
+        rebuildLibrary(repo)
+        return true
+    }
 
     fun rebuildLibrary(repo: LibraryRepository) {
         val bodies = all().map { body(it.id).trim() }.filter { it.isNotBlank() }
