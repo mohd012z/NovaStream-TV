@@ -48,7 +48,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var showTrackInfo by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var feedback by remember { mutableStateOf<GestureFeedback?>(null) }
-    var isPlaying by remember { mutableStateOf(false) }
+    var isPlaying by remember { mutableStateOf(false) }\n    var isMuted by remember { mutableStateOf(false) }\n    var previousVolume by remember { mutableFloatStateOf(1f) }
     val handler = remember { Handler(Looper.getMainLooper()) }
 
     val player: ExoPlayer = remember(item.id) {
@@ -143,6 +143,17 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 isPlaying = isPlaying,
                 onBack = onBack,
                 onPlayPause = { if (player.isPlaying) player.pause() else player.play() },
+                isMuted = isMuted,
+                onMute = {
+                    if (isMuted) {
+                        player.volume = previousVolume.coerceAtLeast(.15f)
+                        isMuted = false
+                    } else {
+                        previousVolume = player.volume
+                        player.volume = 0f
+                        isMuted = true
+                    }
+                },
                 onTracks = { showTrackInfo = true },
                 onPip = {
                     activity.enterPictureInPictureMode(
@@ -199,8 +210,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 private fun PlayerChrome(
     item: PlaylistItem,
     isPlaying: Boolean,
+    isMuted: Boolean,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
+    onMute: () -> Unit,
     onTracks: () -> Unit,
     onPip: () -> Unit,
     onRotate: () -> Unit
@@ -216,9 +229,11 @@ private fun PlayerChrome(
                 Text(item.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(if (item.kind == MediaKind.LIVE) "LIVE" else item.groupTitle.orEmpty(), color = Color(0xFF78F1C7), fontSize = 11.sp)
             }
-            PlayerCircleButton(Icons.Filled.Tune, "Tracks", onTracks)
+            PlayerCircleButton(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, if (isMuted) "Unmute" else "Mute", onMute)
             Spacer(Modifier.width(8.dp))
-            PlayerCircleButton(Icons.Filled.PictureInPictureAlt, "PiP", onPip)
+            PlayerCircleButton(Icons.Filled.Tune, "Audio, subtitles and quality", onTracks)
+            Spacer(Modifier.width(8.dp))
+            PlayerCircleButton(Icons.Filled.PictureInPictureAlt, "Picture in picture", onPip)
             Spacer(Modifier.width(8.dp))
             PlayerCircleButton(Icons.Filled.ScreenRotation, "Rotate", onRotate)
         }
