@@ -33,7 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +63,7 @@ enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, SOURCES, DOWNL
 @Composable
 fun NovaStreamApp(activity: MainActivity) {
     val context = LocalContext.current
-    val repo = remember { LibraryRepository(context) }\n    val sourceStore = remember { PlaylistSourceStore(context) }
+    val repo = remember { LibraryRepository(context) }\n    val sourceStore = remember { PlaylistSourceStore(context) }\n    val appearance = remember { AppearancePreferences(context) }\n    var appearanceVersion by remember { mutableIntStateOf(0) }
     var showSplash by remember { mutableStateOf(true) }
     var selectedOrientation by remember { mutableStateOf<OrientationChoice?>(OrientationChoice.AUTO) }
     var page by remember { mutableStateOf(AppPage.HOME) }
@@ -92,15 +92,23 @@ fun NovaStreamApp(activity: MainActivity) {
         loadingLibrary = false
     }
 
-    val epgIndex = remember(epg) { EpgIndex(epg) }
+    val epgIndex = remember(epg) { EpgIndex(epg) }\n    val selectedTheme = remember(appearanceVersion) { appearance.theme }\n    val selectedFont = remember(appearanceVersion) { appearance.font }\n    val palette = remember(selectedTheme) { paletteFor(selectedTheme) }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = Accent,
-            secondary = Accent2,
-            background = Bg,
-            surface = Panel,
-            surfaceVariant = Panel2
+            primary = palette.accent,
+            secondary = palette.accent2,
+            background = palette.bg,
+            surface = palette.panel,
+            surfaceVariant = palette.panel2
+        ),
+        typography = Typography(
+            bodyLarge = TextStyle(fontFamily = fontFor(selectedFont)),
+            bodyMedium = TextStyle(fontFamily = fontFor(selectedFont)),
+            bodySmall = TextStyle(fontFamily = fontFor(selectedFont)),
+            titleLarge = TextStyle(fontFamily = fontFor(selectedFont), fontWeight = FontWeight.Bold),
+            titleMedium = TextStyle(fontFamily = fontFor(selectedFont), fontWeight = FontWeight.SemiBold),
+            labelLarge = TextStyle(fontFamily = fontFor(selectedFont), fontWeight = FontWeight.SemiBold)
         )
     ) {
         Box(Modifier.fillMaxSize().background(Bg)) {
@@ -121,7 +129,7 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.SEARCH -> SearchScreen(playlist, epgIndex) { playing = it }
                             AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
                             AppPage.DOWNLOADS -> DownloadsScreen()
-                            AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg) { libraryVersion++ }
+                            AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }) { libraryVersion++ }
                         }
                     }
                 }
@@ -549,11 +557,12 @@ private fun SettingsScreen(
     repo: LibraryRepository,
     playlist: List<PlaylistItem>,
     epg: List<EpgProgramme>,
+    onAppearanceChanged: () -> Unit,
     onLibraryChanged: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember { PlayerPreferences(context) }
+    val prefs = remember { PlayerPreferences(context) }\n    val appearance = remember { AppearancePreferences(context) }\n    var themePreset by remember { mutableStateOf(appearance.theme) }\n    var fontPreset by remember { mutableStateOf(appearance.font) }\n    var iconPreset by remember { mutableStateOf(appearance.iconStyle) }\n    var compactCards by remember { mutableStateOf(appearance.compactCards) }
     var status by remember { mutableStateOf("") }
     var brightness by remember { mutableFloatStateOf(prefs.brightnessSensitivity) }
     var volume by remember { mutableFloatStateOf(prefs.volumeSensitivity) }
@@ -619,6 +628,41 @@ private fun SettingsScreen(
         }
         if (status.isNotBlank()) item { Text(status, color = Accent2) }
 
+        item { Text("Appearance", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Colour template", color = Muted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NovaThemePreset.entries.forEach { preset ->
+                        val p = paletteFor(preset)
+                        FilterChip(
+                            selected = themePreset == preset,
+                            onClick = { themePreset = preset; appearance.theme = preset; onAppearanceChanged() },
+                            label = { Text(preset.label) },
+                            leadingIcon = { Box(Modifier.size(14.dp).background(p.accent, CircleShape)) }
+                        )
+                    }
+                }
+                Text("Font", color = Muted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NovaFontPreset.entries.forEach { preset ->
+                        FilterChip(selected = fontPreset == preset, onClick = { fontPreset = preset; appearance.font = preset; onAppearanceChanged() }, label = { Text(preset.label, fontFamily = fontFor(preset)) })
+                    }
+                }
+                Text("Icon style", color = Muted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NovaIconStyle.entries.forEach { preset ->
+                        FilterChip(selected = iconPreset == preset, onClick = { iconPreset = preset; appearance.iconStyle = preset; onAppearanceChanged() }, label = { Text(preset.label) })
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = compactCards, onCheckedChange = { compactCards = it; appearance.compactCards = it; onAppearanceChanged() })
+                    Spacer(Modifier.width(10.dp))
+                    Column { Text("Compact cards"); Text("Fit more channels on screen", color = Muted, fontSize = 11.sp) }
+                }
+                Text("Changes are applied instantly and saved for the next launch.", color = Accent2, fontSize = 11.sp)
+            }
+        }
         item { Text("Player gestures", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
         item {
             Column {
