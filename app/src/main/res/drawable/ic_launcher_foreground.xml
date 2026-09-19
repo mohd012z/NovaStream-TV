@@ -1,5 +1,17 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#67D6FF" android:pathData="M22,18C22,12 27,8 33,8h42c6,0 11,4 11,10v72c0,6 -5,10 -11,10H33c-6,0 -11,-4 -11,-10z"/>
-    <path android:fillColor="#536BFF" android:pathData="M28,23C28,18 32,14 37,14h34c5,0 9,4 9,9v62c0,5 -4,9 -9,9H37c-5,0 -9,-4 -9,-9z"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M44,34L74,54L44,74z"/>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- NovaStream-TV: neon TV + N/play mark, designed for adaptive-icon safe zone -->
+    <path android:fillColor="#00DDFB"
+        android:pathData="M25,31 C25,25 30,21 36,21 H72 C78,21 83,25 83,31 V73 C83,79 78,83 72,83 H36 C30,83 25,79 25,73 Z"/>
+    <path android:fillColor="#071424"
+        android:pathData="M30,34 C30,29 34,26 39,26 H69 C74,26 78,29 78,34 V70 C78,75 74,78 69,78 H39 C34,78 30,75 30,70 Z"/>
+    <path android:fillColor="#7A4DFF"
+        android:pathData="M36,39 L49,39 L66,56 L66,39 L73,39 L73,69 L62,69 L44,51 L44,69 L36,69 Z"/>
+    <path android:fillColor="#00F0E4"
+        android:pathData="M48,42 L70,54 L48,66 Z"/>
+    <path android:fillColor="#9BEFFF"
+        android:pathData="M43,21 L36,12 L39,10 L49,21 Z M65,21 L72,12 L69,10 L59,21 Z"/>
+    <path android:fillColor="#5B6CFF"
+        android:pathData="M17,58 C26,77 54,89 82,73 C68,92 32,92 17,67 C15,64 15,61 17,58 Z"/>
 </vector>
