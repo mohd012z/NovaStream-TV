@@ -136,7 +136,7 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.SERIES -> MediaLibraryScreen("Series", playlist.filter { it.kind == MediaKind.SERIES }, epgIndex) { playing = it }
                             AppPage.SEARCH -> SearchScreen(playlist, epgIndex) { playing = it }
                             AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
-                            AppPage.SOURCES -> PlaylistSourcesScreen(onLibraryChanged = { libraryVersion++ })
+                            AppPage.SOURCES -> PlaylistSourcesScreen(repo, onLibraryChanged = { libraryVersion++ })
                             AppPage.DOWNLOADS -> DownloadsScreen()
                             AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }) { libraryVersion++ }
                         }
