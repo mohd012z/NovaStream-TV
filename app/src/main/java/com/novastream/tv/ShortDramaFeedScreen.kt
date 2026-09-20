@@ -78,13 +78,22 @@ fun ShortDramaFeedScreen(
         }
     }
 
-    LaunchedEffect(pagerState.currentPage) {
+    LaunchedEffect(pagerState.currentPage, queue) {
+        // Warm the next short into the same Media3 disk cache used by playback.
+        // This avoids a second decoder/player while still removing most of the
+        // network wait from the next swipe.
+        MediaPreloadManager.preload(context, queue.getOrNull(pagerState.currentPage + 1))
+
         // A manual swipe cancels stale end-of-episode UI from the previous page.
         if (countdownPage >= 0 && pagerState.currentPage != countdownPage) {
             countdown = 0
             countdownPage = -1
         }
         completedItem = null
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { MediaPreloadManager.cancel() }
     }
 
     BackHandler { onBack() }
