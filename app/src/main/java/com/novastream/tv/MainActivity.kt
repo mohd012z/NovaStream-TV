@@ -12,11 +12,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,10 +34,16 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -53,19 +62,22 @@ private val Muted = Color(0xFFA8B3C0)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PerfectTvEnhancedApp(this) }
+        setContent { NovaStreamApp(this) }
     }
 }
 
 enum class OrientationChoice { PORTRAIT, LANDSCAPE, AUTO }
-enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, DOWNLOADS, SETTINGS }
+enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, SOURCES, DOWNLOADS, SETTINGS }
 
 @Composable
-fun PerfectTvEnhancedApp(activity: MainActivity) {
+fun NovaStreamApp(activity: MainActivity) {
     val context = LocalContext.current
     val repo = remember { LibraryRepository(context) }
+    val sourceStore = remember { PlaylistSourceStore(context) }
+    val appearance = remember { AppearancePreferences(context) }
+    var appearanceVersion by remember { mutableIntStateOf(0) }
     var showSplash by remember { mutableStateOf(true) }
-    var selectedOrientation by remember { mutableStateOf<OrientationChoice?>(null) }
+    var selectedOrientation by remember { mutableStateOf<OrientationChoice?>(OrientationChoice.AUTO) }
     var page by remember { mutableStateOf(AppPage.HOME) }
     var playing by remember { mutableStateOf<PlaylistItem?>(null) }
     var libraryVersion by remember { mutableIntStateOf(0) }
@@ -80,21 +92,38 @@ fun PerfectTvEnhancedApp(activity: MainActivity) {
 
     LaunchedEffect(libraryVersion) {
         loadingLibrary = true
-        val loaded = withContext(Dispatchers.IO) { repo.playlist() to repo.epg() }
+        val loaded = withContext(Dispatchers.IO) {
+            // First launch is zero-setup: seed the comprehensive public directory,
+            // then always rebuild one unified library from every saved source.
+            sourceStore.ensureDefaultSource(repo)
+            sourceStore.rebuildLibrary(repo)
+            repo.playlist() to repo.epg()
+        }
         playlist = loaded.first
         epg = loaded.second
         loadingLibrary = false
     }
 
     val epgIndex = remember(epg) { EpgIndex(epg) }
+    val selectedTheme = remember(appearanceVersion) { appearance.theme }
+    val selectedFont = remember(appearanceVersion) { appearance.font }
+    val palette = remember(selectedTheme) { paletteFor(selectedTheme) }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = Accent,
-            secondary = Accent2,
-            background = Bg,
-            surface = Panel,
-            surfaceVariant = Panel2
+            primary = palette.accent,
+            secondary = palette.accent2,
+            background = palette.bg,
+            surface = palette.panel,
+            surfaceVariant = palette.panel2
+        ),
+        typography = Typography(
+            bodyLarge = TextStyle(fontFamily = fontFor(selectedFont)),
+            bodyMedium = TextStyle(fontFamily = fontFor(selectedFont)),
+            bodySmall = TextStyle(fontFamily = fontFor(selectedFont)),
+            titleLarge = TextStyle(fontFamily = fontFor(selectedFont), fontWeight = FontWeight.Bold),
+            titleMedium = TextStyle(fontFamily = fontFor(selectedFont), fontWeight = FontWeight.SemiBold),
+            labelLarge = TextStyle(fontFamily = fontFor(selectedFont), fontWeight = FontWeight.SemiBold)
         )
     ) {
         Box(Modifier.fillMaxSize().background(Bg)) {
@@ -114,8 +143,9 @@ fun PerfectTvEnhancedApp(activity: MainActivity) {
                             AppPage.SERIES -> MediaLibraryScreen("Series", playlist.filter { it.kind == MediaKind.SERIES }, epgIndex) { playing = it }
                             AppPage.SEARCH -> SearchScreen(playlist, epgIndex) { playing = it }
                             AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
+                            AppPage.SOURCES -> PlaylistSourcesScreen(repo, onLibraryChanged = { libraryVersion++ })
                             AppPage.DOWNLOADS -> DownloadsScreen()
-                            AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg) { libraryVersion++ }
+                            AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }, navigate = { page = it }) { libraryVersion++ }
                         }
                     }
                 }
@@ -157,7 +187,7 @@ private fun BrandSplash() {
                 Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(58.dp))
             }
             Spacer(Modifier.height(20.dp))
-            Text("PerfectTV Enhanced", fontWeight = FontWeight.Black, fontSize = 28.sp, color = Color.White)
+            Text("NovaStream-TV", fontWeight = FontWeight.Black, fontSize = 28.sp, color = Color.White)
             Text("Fast • Visual • Smart Player", color = Accent2, fontSize = 13.sp)
         }
     }
@@ -170,8 +200,7 @@ private fun BottomBar(current: AppPage, onSelect: (AppPage) -> Unit) {
             Triple(AppPage.HOME, "Home", Icons.Filled.Home),
             Triple(AppPage.LIVE, "Live", Icons.Filled.LiveTv),
             Triple(AppPage.SEARCH, "Search", Icons.Filled.Search),
-            Triple(AppPage.HISTORY, "History", Icons.Filled.History),
-            Triple(AppPage.DOWNLOADS, "Downloads", Icons.Filled.Download)
+            Triple(AppPage.HISTORY, "History", Icons.Filled.History)
         ).forEach { (page, label, icon) ->
             NavigationBarItem(
                 selected = current == page,
@@ -228,7 +257,11 @@ private fun HomeScreen(
 ) {
     val recent = remember(playlist) { PlaybackStore(activity).recent(8) }
     val live = remember(playlist) { playlist.filter { it.kind == MediaKind.LIVE || it.kind == MediaKind.UNKNOWN }.take(10) }
-    val movies = remember(playlist) { playlist.filter { it.kind == MediaKind.MOVIE }.take(10) }
+    val movies = remember(playlist) { playlist.filter { it.kind == MediaKind.MOVIE }.take(12) }
+    val series = remember(playlist) { playlist.filter { it.kind == MediaKind.SERIES }.take(12) }
+    val news = remember(playlist) { playlist.filter { it.groupTitle.orEmpty().contains("news", true) }.take(12) }
+    val sports = remember(playlist) { playlist.filter { it.groupTitle.orEmpty().contains("sport", true) }.take(12) }
+    val hero = remember(live, movies) { live.firstOrNull() ?: movies.firstOrNull() }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -240,8 +273,8 @@ private fun HomeScreen(
                 BrandMark(54.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("PerfectTV Enhanced", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text("Premium visual player", color = Accent2, fontSize = 12.sp)
+                    Text("NovaStream-TV", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("All your channels. One library.", color = Accent2, fontSize = 12.sp)
                 }
                 IconButton(onClick = { navigate(AppPage.SETTINGS) }) { Icon(Icons.Filled.Settings, "Settings", tint = Muted) }
             }
@@ -249,19 +282,40 @@ private fun HomeScreen(
 
         item {
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            else Text("${playlist.size} items • $epgCount EPG programmes", color = Muted, fontSize = 12.sp)
+            else Text("${playlist.size} channels & titles • $epgCount EPG programmes", color = Muted, fontSize = 12.sp)
+        }
+
+        hero?.let { featured ->
+            item {
+                Box(
+                    Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(28.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF17364D), Color(0xFF111827), Bg)))
+                        .border(1.dp, Accent.copy(alpha = .20f), RoundedCornerShape(28.dp))
+                ) {
+                    if (!featured.logoUrl.isNullOrBlank()) {
+                        AsyncImage(featured.logoUrl, featured.name, Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.48f).padding(24.dp), contentScale = ContentScale.Fit)
+                    }
+                    Column(Modifier.align(Alignment.CenterStart).padding(22.dp).fillMaxWidth(.62f)) {
+                        Surface(shape = RoundedCornerShape(50), color = Color.Red.copy(alpha = .85f)) {
+                            Text("LIVE", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontWeight = FontWeight.Black, fontSize = 10.sp)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text(featured.name, fontSize = 25.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(epgIndex.now(featured.tvgId)?.title ?: featured.groupTitle.orEmpty().ifBlank { "Watch now" }, color = Muted, maxLines = 2)
+                        Spacer(Modifier.height(14.dp))
+                        Button(onClick = { play(featured) }) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Watch") }
+                    }
+                }
+            }
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FeatureCard("LIVE TV", "Watch channels", Icons.Filled.LiveTv, Modifier.weight(1f)) { navigate(AppPage.LIVE) }
-                FeatureCard("MOVIES", "On demand", Icons.Filled.Movie, Modifier.weight(1f)) { navigate(AppPage.MOVIES) }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FeatureCard("SERIES", "Episodes", Icons.Filled.VideoLibrary, Modifier.weight(1f)) { navigate(AppPage.SERIES) }
-                FeatureCard("SEARCH", "Find anything", Icons.Filled.Search, Modifier.weight(1f)) { navigate(AppPage.SEARCH) }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                item { QuickAction("Live", Icons.Filled.LiveTv) { navigate(AppPage.LIVE) } }
+                item { QuickAction("Movies", Icons.Filled.Movie) { navigate(AppPage.MOVIES) } }
+                item { QuickAction("Series", Icons.Filled.VideoLibrary) { navigate(AppPage.SERIES) } }
+                item { QuickAction("Playlists", Icons.Filled.PlaylistPlay) { navigate(AppPage.SOURCES) } }
+                item { QuickAction("Search", Icons.Filled.Search) { navigate(AppPage.SEARCH) } }
             }
         }
 
@@ -292,6 +346,21 @@ private fun HomeScreen(
             }
         }
 
+        if (news.isNotEmpty()) {
+            item { SectionHeader("News", "See all") { navigate(AppPage.LIVE) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(news, key = { it.id }) { item -> PosterChannelCard(item, epgIndex.now(item.tvgId)) { play(item) } } } }
+        }
+
+        if (sports.isNotEmpty()) {
+            item { SectionHeader("Sports", "See all") { navigate(AppPage.LIVE) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(sports, key = { it.id }) { item -> PosterChannelCard(item, epgIndex.now(item.tvgId)) { play(item) } } } }
+        }
+
+        if (series.isNotEmpty()) {
+            item { SectionHeader("Series", "See all") { navigate(AppPage.SERIES) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(series, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
+        }
+
         if (movies.isNotEmpty()) {
             item { SectionHeader("Movies", "See all") { navigate(AppPage.MOVIES) } }
             item {
@@ -311,6 +380,23 @@ private fun BrandMark(size: androidx.compose.ui.unit.Dp) {
             .border(1.dp, Color.White.copy(alpha = .30f), RoundedCornerShape(18.dp)),
         contentAlignment = Alignment.Center
     ) { Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.fillMaxSize(.68f)) }
+}
+
+@Composable
+private fun QuickAction(label: String, icon: ImageVector, onClick: () -> Unit) {
+    Surface(
+        Modifier.width(84.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = Panel2
+    ) {
+        Column(Modifier.padding(vertical = 14.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(36.dp).clip(CircleShape).background(Accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = Accent)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }
 
 @Composable
@@ -371,33 +457,39 @@ private fun PosterChannelCard(item: PlaylistItem, now: EpgProgramme?, onClick: (
 @Composable
 private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
     var group by remember { mutableStateOf("All") }
+    var rating by remember { mutableStateOf("All") }
     val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().take(20) }
     val filtered = remember(items, group) { if (group == "All") items else items.filter { it.groupTitle == group } }
+    val listState = rememberLazyListState()
 
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(18.dp, 18.dp, 18.dp, 28.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text(title, fontSize = 28.sp, fontWeight = FontWeight.Black)
-            Text("${filtered.size} items", color = Muted)
-        }
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                groups.forEach { g ->
-                    FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g, maxLines = 1) })
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = PaddingValues(18.dp, 18.dp, 30.dp, 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Text(title, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("${filtered.size} items", color = Muted)
+            }
+            item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    groups.forEach { g ->
+                        FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g, maxLines = 1) })
+                    }
+                }
+            }
+            if (filtered.isEmpty()) {
+                item { EmptyCard("Import an authorized M3U playlist in Settings") }
+            } else {
+                items(filtered, key = { it.id }) { item ->
+                    val now = epgIndex.now(item.tvgId)
+                    ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
                 }
             }
         }
-        if (filtered.isEmpty()) {
-            item { EmptyCard("Import an authorized M3U playlist in Settings") }
-        } else {
-            items(filtered, key = { it.id }) { item ->
-                val now = epgIndex.now(item.tvgId)
-                ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
-            }
-        }
+        FastScrollbar(listState, filtered.size, Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -446,26 +538,116 @@ private fun GlassRow(onClick: () -> Unit, content: @Composable RowScope.() -> Un
 @Composable
 private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
     var query by remember { mutableStateOf("") }
-    val results = remember(items, query) {
-        if (query.isBlank()) emptyList() else items.filter {
-            it.name.contains(query, true) || it.groupTitle.orEmpty().contains(query, true)
-        }.take(150)
+    var type by remember { mutableStateOf("All") }
+    var year by remember { mutableStateOf("All") }
+    var genre by remember { mutableStateOf("All") }
+    var group by remember { mutableStateOf("All") }
+    var rating by remember { mutableStateOf("All") }
+    var country by remember { mutableStateOf("All") }
+
+    fun inferredYear(item: PlaylistItem): Int? =
+        item.year ?: Regex("""\b(19|20)\d{2}\b""").find(item.name)?.value?.toIntOrNull()
+
+    fun inferredGenre(item: PlaylistItem): String =
+        item.genre?.takeIf { it.isNotBlank() } ?: item.groupTitle.orEmpty().ifBlank { "Other" }
+
+    val years = remember(items) {
+        listOf("All") + items.mapNotNull(::inferredYear).distinct().sortedDescending().map(Int::toString)
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { Text("Search", fontSize = 28.sp, fontWeight = FontWeight.Black) }
-        item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
-                placeholder = { Text("Channel, movie or series") },
-                singleLine = true
-            )
+    val genres = remember(items) {
+        listOf("All") + items.map(::inferredGenre).filter { it.isNotBlank() }.distinct().sorted().take(40)
+    }
+    val groups = remember(items) {
+        listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().sorted().take(40)
+    }
+    val countries = remember(items) {
+        listOf("All") + items.mapNotNull { it.country?.takeIf(String::isNotBlank) }.distinct().sorted().take(60)
+    }
+
+    val results = remember(items, query, type, year, genre, group, rating, country) {
+        items.asSequence().filter { item ->
+            val textMatch = query.isBlank() ||
+                item.name.contains(query, true) ||
+                item.tvgName.orEmpty().contains(query, true) ||
+                item.groupTitle.orEmpty().contains(query, true) ||
+                epgIndex.now(item.tvgId)?.title.orEmpty().contains(query, true)
+            val typeMatch = when (type) {
+                "Live" -> item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
+                "Movies" -> item.kind == MediaKind.MOVIE
+                "Series" -> item.kind == MediaKind.SERIES
+                else -> true
+            }
+            val yearMatch = year == "All" || inferredYear(item)?.toString() == year
+            val genreMatch = genre == "All" || inferredGenre(item).equals(genre, true)
+            val groupMatch = group == "All" || item.groupTitle.orEmpty().equals(group, true)
+            val ratingMatch = rating == "All" || item.contentRating.label == rating
+            val countryMatch = country == "All" || item.country.orEmpty().equals(country, true)
+            textMatch && typeMatch && yearMatch && genreMatch && groupMatch && ratingMatch && countryMatch
+        }.take(300).toList()
+    }
+
+    val searchListState = rememberLazyListState()
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = searchListState, contentPadding = PaddingValues(18.dp, 18.dp, 30.dp, 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Text("Discover", fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("Search and filter your unified TV library", color = Muted)
+            }
+            item {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
+                    trailingIcon = { if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Close, "Clear") } },
+                    placeholder = { Text("Channel, programme, movie or series") }, singleLine = true
+                )
+            }
+            item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Live", "Movies", "Series").forEach { value ->
+                        FilterChip(selected = type == value, onClick = { type = value }, label = { Text(value) })
+                    }
+                }
+            }
+            item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterMenu("Year", year, years) { year = it }
+                    FilterMenu("Type / Genre", genre, genres) { genre = it }
+                    FilterMenu("TV group", group, groups) { group = it }
+                    FilterMenu("Rating", rating, listOf("All") + ContentRating.entries.map { it.label }) { rating = it }
+                    FilterMenu("Country", country, countries) { country = it }
+                    if (year != "All" || genre != "All" || group != "All" || type != "All" || rating != "All" || country != "All") {
+                        AssistChip(onClick = { type = "All"; year = "All"; genre = "All"; group = "All"; rating = "All"; country = "All" }, label = { Text("Reset") }, leadingIcon = { Icon(Icons.Filled.RestartAlt, null) })
+                    }
+                }
+            }
+            item { Text("${results.size} results", color = Muted, fontSize = 12.sp) }
+            if (results.isEmpty()) item { EmptyCard("No matching content. Try removing a filter.") }
+            items(results, key = { it.id }) { item ->
+                val now = epgIndex.now(item.tvgId)
+                ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
+            }
         }
-        items(results, key = { it.id }) { item ->
-            val now = epgIndex.now(item.tvgId)
-            ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
+        FastScrollbar(searchListState, results.size, Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+@Composable
+private fun FilterMenu(label: String, selected: String, values: List<String>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = { Text(if (selected == "All") label else "$label: $selected", maxLines = 1) },
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            values.take(50).forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(value, maxLines = 1) },
+                    onClick = { onSelect(value); expanded = false },
+                    leadingIcon = { if (selected == value) Icon(Icons.Filled.Check, null) }
+                )
+            }
         }
     }
 }
@@ -500,19 +682,38 @@ private fun DownloadsScreen() {
 }
 
 @Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
 private fun SettingsScreen(
     repo: LibraryRepository,
     playlist: List<PlaylistItem>,
     epg: List<EpgProgramme>,
+    onAppearanceChanged: () -> Unit,
+    navigate: (AppPage) -> Unit,
     onLibraryChanged: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { PlayerPreferences(context) }
+    val appearance = remember { AppearancePreferences(context) }
+    var themePreset by remember { mutableStateOf(appearance.theme) }
+    var fontPreset by remember { mutableStateOf(appearance.font) }
+    var iconPreset by remember { mutableStateOf(appearance.iconStyle) }
+    var compactCards by remember { mutableStateOf(appearance.compactCards) }
     var status by remember { mutableStateOf("") }
     var brightness by remember { mutableFloatStateOf(prefs.brightnessSensitivity) }
     var volume by remember { mutableFloatStateOf(prefs.volumeSensitivity) }
     var autoRetry by remember { mutableStateOf(prefs.autoRetry) }
+    var showM3uUrlDialog by remember { mutableStateOf(false) }
 
     val m3uLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
@@ -536,6 +737,13 @@ private fun SettingsScreen(
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Settings", fontSize = 28.sp, fontWeight = FontWeight.Black) }
         item { Text("${playlist.size} playlist items • ${epg.size} EPG programmes", color = Muted) }
+
+        item { SectionLabel("PLAYLISTS") }
+        item {
+            GlassRow(onClick = { navigate(AppPage.SOURCES) }) {
+                Icon(Icons.Filled.PlaylistPlay, null, tint = Accent); Spacer(Modifier.width(12.dp)); Text("Manage playlists", fontWeight = FontWeight.SemiBold)
+            }
+        }
         item {
             GlassRow(onClick = { m3uLauncher.launch(arrayOf("audio/x-mpegurl", "application/vnd.apple.mpegurl", "text/plain", "*/*")) }) {
                 Icon(Icons.Filled.PlaylistAdd, null, tint = Accent); Spacer(Modifier.width(12.dp)); Text("Import local M3U", fontWeight = FontWeight.SemiBold)
@@ -574,7 +782,43 @@ private fun SettingsScreen(
         }
         if (status.isNotBlank()) item { Text(status, color = Accent2) }
 
-        item { Text("Player gestures", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+        item { SectionLabel("APPEARANCE") }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Colour template", color = Muted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NovaThemePreset.entries.forEach { preset ->
+                        val p = paletteFor(preset)
+                        FilterChip(
+                            selected = themePreset == preset,
+                            onClick = { themePreset = preset; appearance.theme = preset; onAppearanceChanged() },
+                            label = { Text(preset.label) },
+                            leadingIcon = { Box(Modifier.size(14.dp).background(p.accent, CircleShape)) }
+                        )
+                    }
+                }
+                Text("Font", color = Muted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NovaFontPreset.entries.forEach { preset ->
+                        FilterChip(selected = fontPreset == preset, onClick = { fontPreset = preset; appearance.font = preset; onAppearanceChanged() }, label = { Text(preset.label, fontFamily = fontFor(preset)) })
+                    }
+                }
+                Text("Icon style", color = Muted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NovaIconStyle.entries.forEach { preset ->
+                        FilterChip(selected = iconPreset == preset, onClick = { iconPreset = preset; appearance.iconStyle = preset; onAppearanceChanged() }, label = { Text(preset.label) })
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = compactCards, onCheckedChange = { compactCards = it; appearance.compactCards = it; onAppearanceChanged() })
+                    Spacer(Modifier.width(10.dp))
+                    Column { Text("Compact cards"); Text("Fit more channels on screen", color = Muted, fontSize = 11.sp) }
+                }
+                Text("Changes are applied instantly and saved for the next launch.", color = Accent2, fontSize = 11.sp)
+            }
+        }
+
+        item { SectionLabel("PLAYBACK") }
         item {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Filled.Brightness6, null, tint = Accent); Spacer(Modifier.width(8.dp)); Text("Brightness sensitivity ${(brightness * 100).toInt()}%") }
@@ -593,12 +837,63 @@ private fun SettingsScreen(
                 Spacer(Modifier.width(10.dp)); Text("Auto retry playback")
             }
         }
+
+        item { SectionLabel("DATA") }
         item {
             OutlinedButton(onClick = { repo.clear(); onLibraryChanged(); status = "Library cleared" }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.DeleteSweep, null); Spacer(Modifier.width(8.dp)); Text("Clear library")
             }
         }
-        item { Text("PerfectTV Enhanced v2.0", color = Muted, fontSize = 12.sp) }
+        item { Text("NovaStream-TV", color = Muted, fontSize = 12.sp) }
+    }
+}
+
+@Composable
+private fun FastScrollbar(listState: LazyListState, itemCount: Int, modifier: Modifier = Modifier) {
+    if (itemCount <= 1) return
+    val scope = rememberCoroutineScope()
+    var trackHeightPx by remember { mutableFloatStateOf(0f) }
+    val layoutInfo = listState.layoutInfo
+    val visibleCount = layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
+    if (visibleCount >= itemCount) return // whole list fits on screen, no need for a scrollbar
+    val maxFirstIndex = (itemCount - visibleCount).coerceAtLeast(1)
+    val thumbFraction = (visibleCount.toFloat() / itemCount).coerceIn(0.08f, 1f)
+    val thumbHeightPx = trackHeightPx * thumbFraction
+    val progress = (listState.firstVisibleItemIndex.toFloat() / maxFirstIndex).coerceIn(0f, 1f)
+    val thumbOffsetPx = ((trackHeightPx - thumbHeightPx) * progress).coerceAtLeast(0f)
+
+    Box(
+        modifier
+            .fillMaxHeight()
+            .width(28.dp)
+            .onGloballyPositioned { trackHeightPx = it.size.height.toFloat() }
+            .pointerInput(itemCount, maxFirstIndex) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        if (trackHeightPx > 0f) {
+                            val target = ((offset.y / trackHeightPx) * maxFirstIndex).toInt().coerceIn(0, itemCount - 1)
+                            scope.launch { listState.scrollToItem(target) }
+                        }
+                    }
+                ) { change, _ ->
+                    change.consume()
+                    if (trackHeightPx > 0f) {
+                        val target = ((change.position.y / trackHeightPx) * maxFirstIndex).toInt().coerceIn(0, itemCount - 1)
+                        scope.launch { listState.scrollToItem(target) }
+                    }
+                }
+            }
+    ) {
+        val thumbHeightDp = with(LocalDensity.current) { thumbHeightPx.toDp() }.coerceAtLeast(28.dp)
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .offset { IntOffset(0, thumbOffsetPx.toInt()) }
+                .padding(end = 4.dp)
+                .width(6.dp)
+                .height(thumbHeightDp)
+                .background(Accent.copy(alpha = .75f), RoundedCornerShape(3.dp))
+        )
     }
 }
 

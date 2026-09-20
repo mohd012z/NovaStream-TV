@@ -2,6 +2,13 @@ package com.novastream.tv
 
 enum class MediaKind { LIVE, MOVIE, SERIES, UNKNOWN }
 
+enum class ContentRating(val label: String) {
+    ALL_AGES("All Ages"),
+    TEEN("Teen"),
+    MATURE("Mature"),
+    UNRATED("Unrated")
+}
+
 data class PlaylistItem(
     val id: String,
     val name: String,
@@ -10,6 +17,10 @@ data class PlaylistItem(
     val tvgName: String? = null,
     val logoUrl: String? = null,
     val groupTitle: String? = null,
+    val year: Int? = null,
+    val genre: String? = null,
+    val country: String? = null,
+    val contentRating: ContentRating = ContentRating.UNRATED,
     val userAgent: String? = null,
     val referer: String? = null,
     val kind: MediaKind = MediaKind.UNKNOWN
