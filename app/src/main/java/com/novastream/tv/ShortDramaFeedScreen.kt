@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val ShortsAccent = Color(0xFF67D6FF)
@@ -96,13 +97,22 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
     val context = LocalContext.current
     var isPlaying by remember(item.id) { mutableStateOf(true) }
     var isMuted by remember(item.id) { mutableStateOf(false) }
+    var playbackHealth by remember(item.id) { mutableStateOf(PlaybackHealth.CONNECTING) }
+    var retryCount by remember(item.id) { mutableIntStateOf(0) }
+    var bufferingSinceMs by remember(item.id) { mutableLongStateOf(0L) }
+    var showRecovery by remember(item.id) { mutableStateOf(false) }
+    val store = remember { PlaybackStore(context) }
     val player = remember(item.id) { StreamPlayerFactory.build(context, item) }
 
     DisposableEffect(item.id) {
         player.setMediaItem(StreamPlayerFactory.mediaItem(item))
+        store.get(item.id)?.positionMs?.takeIf { it > 3_000L }?.let { player.seekTo(it) }
         player.repeatMode = Player.REPEAT_MODE_OFF
         player.prepare()
         onDispose {
+            val duration = player.duration.coerceAtLeast(0L)
+            val position = player.currentPosition.coerceAtLeast(0L)
+            store.save(PlaybackRecord(item.id, item.name, position, duration))
             player.stop()
             player.release()
         }
@@ -111,7 +121,26 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
+                playbackHealth = when (state) {
+                    Player.STATE_BUFFERING -> {
+                        if (bufferingSinceMs == 0L) bufferingSinceMs = System.currentTimeMillis()
+                        PlaybackHealth.BUFFERING
+                    }
+                    Player.STATE_READY -> {
+                        bufferingSinceMs = 0L
+                        showRecovery = false
+                        retryCount = 0
+                        PlaybackHealth.READY
+                    }
+                    Player.STATE_ENDED -> PlaybackHealth.ENDED
+                    else -> PlaybackHealth.CONNECTING
+                }
                 if (state == Player.STATE_ENDED) onEnded()
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                playbackHealth = PlaybackHealth.RECOVERING
+                showRecovery = true
             }
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
@@ -127,6 +156,35 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
             player.play()
         } else {
             player.pause()
+        }
+    }
+
+    // A short should never sit forever on a frozen frame. If Media3 remains
+    // BUFFERING for 10 seconds, try a bounded recovery from the same position.
+    LaunchedEffect(isActive, playbackHealth, bufferingSinceMs) {
+        if (isActive && playbackHealth == PlaybackHealth.BUFFERING && bufferingSinceMs > 0L) {
+            delay(10_000L)
+            if (player.playbackState == Player.STATE_BUFFERING && retryCount < 3) {
+                val resumeAt = player.currentPosition.coerceAtLeast(0L)
+                retryCount += 1
+                playbackHealth = PlaybackHealth.RECOVERING
+                showRecovery = true
+                player.prepare()
+                if (resumeAt > 0L) player.seekTo(resumeAt)
+                player.playWhenReady = true
+            } else if (player.playbackState == Player.STATE_BUFFERING) {
+                playbackHealth = PlaybackHealth.ERROR
+                showRecovery = true
+            }
+        }
+    }
+
+    LaunchedEffect(isActive) {
+        while (isActive) {
+            delay(2_000L)
+            val duration = player.duration.coerceAtLeast(0L)
+            val position = player.currentPosition.coerceAtLeast(0L)
+            if (position > 0L) store.save(PlaybackRecord(item.id, item.name, position, duration))
         }
     }
 
@@ -150,6 +208,36 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
                 if (player.isPlaying) player.pause() else player.play()
             }
         )
+
+        if (showRecovery) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                color = Color.Black.copy(alpha = .82f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+            ) {
+                Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        when (playbackHealth) {
+                            PlaybackHealth.ERROR -> "Playback interrupted"
+                            else -> "Recovering stream…"
+                        },
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text("Attempt $retryCount/3 • progress preserved", color = Color.White.copy(alpha = .7f), fontSize = 12.sp)
+                    Spacer(Modifier.height(10.dp))
+                    TextButton(onClick = {
+                        val resumeAt = player.currentPosition.coerceAtLeast(0L)
+                        retryCount = (retryCount + 1).coerceAtMost(3)
+                        playbackHealth = PlaybackHealth.RECOVERING
+                        player.prepare()
+                        if (resumeAt > 0L) player.seekTo(resumeAt)
+                        player.playWhenReady = true
+                    }) { Text("Retry now", color = ShortsAccent) }
+                }
+            }
+        }
 
         Column(
             Modifier
