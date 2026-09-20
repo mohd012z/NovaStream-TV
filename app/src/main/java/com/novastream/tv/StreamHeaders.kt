@@ -53,9 +53,13 @@ object StreamPlayerFactory {
                 .setUserAgent(userAgent)
         }
 
+        // MovieBox-style lesson worth keeping: cache seekable/episodic VOD, but
+        // never cache live television. Shorts benefit because replay, back-swipe,
+        // and the next episode can reuse already fetched media segments.
         val sourceFactory: DataSource.Factory = when (item.kind) {
-            MediaKind.MOVIE, MediaKind.SERIES -> MediaCache.dataSourceFactory(context, http)
-            else -> http
+            MediaKind.MOVIE, MediaKind.SERIES, MediaKind.SHORT_DRAMA,
+            MediaKind.MUSIC, MediaKind.MUSIC_VIDEO -> MediaCache.dataSourceFactory(context, http)
+            MediaKind.LIVE, MediaKind.UNKNOWN -> http
         }
 
         val selector = DefaultTrackSelector(context).apply {
@@ -74,15 +78,40 @@ object StreamPlayerFactory {
         // an extremely small buffer here caused stutter right after the first frame on slower
         // IPTV origins; VOD keeps a smaller buffer requirement since its source is cached/seekable.
         val isLive = item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
+        val isShort = item.kind == MediaKind.SHORT_DRAMA
+        val minBufferMs = when {
+            isLive -> 12_000
+            isShort -> 5_000
+            else -> 10_000
+        }
+        val maxBufferMs = when {
+            isLive -> 45_000
+            isShort -> 30_000
+            else -> 60_000
+        }
+        val startBufferMs = when {
+            isLive -> 2_000
+            isShort -> 600
+            else -> 1_000
+        }
+        val rebufferMs = when {
+            isLive -> 4_000
+            isShort -> 1_500
+            else -> 2_500
+        }
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                if (isLive) 12_000 else 8_000,
-                if (isLive) 45_000 else 50_000,
-                if (isLive) 2_000 else 750,
-                if (isLive) 4_000 else 1_500
+                minBufferMs,
+                maxBufferMs,
+                startBufferMs,
+                rebufferMs
             )
             .setPrioritizeTimeOverSizeThresholds(true) // catch up to live edge / start faster instead of waiting on byte thresholds
-            .setBackBuffer(if (isLive) 10_000 else 30_000, true) // trim old buffered media so seeking/rebuffering stays cheap
+            .setBackBuffer(when {
+                isLive -> 10_000
+                isShort -> 8_000
+                else -> 30_000
+            }, true) // trim old buffered media so seeking/rebuffering stays cheap
             .build()
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
