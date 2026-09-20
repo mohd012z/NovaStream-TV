@@ -52,6 +52,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     val activity = context as Activity
     val store = remember { PlaybackStore(context) }
     val prefs = remember { PlayerPreferences(context) }
+    val probeCache = remember { NovaProbeCache(context) }
     var message by remember { mutableStateOf("Connecting…") }
     var bufferingSinceMs by remember { mutableLongStateOf(0L) }
     var firstFrameMs by remember { mutableLongStateOf(0L) }
@@ -160,6 +161,14 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     val firstByte = built.networkStats.firstByteDelayMs()
                     val start = if (firstFrameMs < 1000) "${firstFrameMs} ms" else String.format("%.1f s", firstFrameMs / 1000f)
                     signalInfo = if (firstByte >= 0) "Start $start • first data ${firstByte}ms" else "Started in $start"
+                    probeCache.observe(
+                        item = item,
+                        isLive = player.isCurrentMediaItemLive,
+                        isSeekable = player.isCurrentMediaItemSeekable,
+                        startupMs = firstFrameMs,
+                        firstByteMs = firstByte,
+                        healthy = true
+                    )
                 }
             }
 
@@ -176,6 +185,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                probeCache.markFailure(item.streamUrl)
                 message = "Stream unavailable"
                 if (prefs.autoRetry && retryCount < 3) {
                     retryCount++
