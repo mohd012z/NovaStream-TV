@@ -1,6 +1,6 @@
 package com.novastream.tv
 
-enum class MediaKind { LIVE, MOVIE, SERIES, UNKNOWN }
+enum class MediaKind { LIVE, MOVIE, SERIES, MUSIC, MUSIC_VIDEO, SHORT_DRAMA, UNKNOWN }
 
 enum class ContentRating(val label: String) {
     ALL_AGES("All Ages"),
