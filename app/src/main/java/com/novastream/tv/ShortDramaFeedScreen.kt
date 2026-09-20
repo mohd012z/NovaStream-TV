@@ -63,7 +63,11 @@ fun ShortDramaFeedScreen(
     LaunchedEffect(countdownPage, countdown) {
         if (countdownPage >= 0 && countdown > 0) {
             delay(1_000L)
-            if (countdown > 1) {
+            // Do not force-scroll if the viewer already swiped away manually.
+            if (pagerState.currentPage != countdownPage) {
+                countdown = 0
+                countdownPage = -1
+            } else if (countdown > 1) {
                 countdown -= 1
             } else {
                 val target = countdownPage + 1
@@ -72,6 +76,15 @@ fun ShortDramaFeedScreen(
                 if (target < queue.size) pagerState.animateScrollToPage(target)
             }
         }
+    }
+
+    LaunchedEffect(pagerState.currentPage) {
+        // A manual swipe cancels stale end-of-episode UI from the previous page.
+        if (countdownPage >= 0 && pagerState.currentPage != countdownPage) {
+            countdown = 0
+            countdownPage = -1
+        }
+        completedItem = null
     }
 
     BackHandler { onBack() }
@@ -87,9 +100,8 @@ fun ShortDramaFeedScreen(
                 Text("No short dramas in your library yet", color = Color.White)
             }
         } else {
-            // beyondViewportPageCount = 1 keeps at most the current page plus one
-            // adjacent page composed (and therefore holding a live ExoPlayer) at
-            // any time; pages further away are disposed, releasing their player.
+            // Adjacent pages may stay composed for smooth swiping, but only the
+            // current page is allowed to own a live ExoPlayer.
             VerticalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -103,11 +115,23 @@ fun ShortDramaFeedScreen(
                             val current = queue[page]
                             val next = queue.getOrNull(page + 1)
                             val sameSeries = UniversalPlaybackPolicy.isSameSeries(current, next)
-                            if (sameSeries) {
-                                countdownPage = page
-                                countdown = 3
-                            } else {
-                                completedItem = current
+                            val decision = UniversalPlaybackPolicy.onEnded(
+                                item = current,
+                                hasNextEpisode = sameSeries,
+                                hasNextQueueItem = next != null
+                            )
+                            when (decision.action) {
+                                PlaybackEndAction.NEXT_EPISODE -> {
+                                    countdownPage = page
+                                    countdown = 3
+                                }
+                                PlaybackEndAction.SERIES_COMPLETE,
+                                PlaybackEndAction.SHOW_WHATS_NEXT,
+                                PlaybackEndAction.MOVIE_COMPLETE -> completedItem = current
+                                PlaybackEndAction.NEXT_QUEUE_ITEM -> {
+                                    if (next != null) scope.launch { pagerState.animateScrollToPage(page + 1) }
+                                }
+                                PlaybackEndAction.KEEP_LIVE -> Unit
                             }
                         }
                     }
