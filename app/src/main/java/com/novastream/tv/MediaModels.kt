@@ -23,7 +23,13 @@ data class PlaylistItem(
     val contentRating: ContentRating = ContentRating.UNRATED,
     val userAgent: String? = null,
     val referer: String? = null,
-    val kind: MediaKind = MediaKind.UNKNOWN
+    val kind: MediaKind = MediaKind.UNKNOWN,
+    // For SERIES / SHORT_DRAMA items: the cleaned show name with the episode
+    // suffix stripped (e.g. "Bulan Henti Bicara" from "Bulan Henti Bicara Ep01"),
+    // and the parsed episode number when one was found. Both stay null for
+    // kinds where episode parsing does not apply (LIVE, MOVIE, MUSIC, ...).
+    val showName: String? = null,
+    val episodeNumber: Int? = null
 )
 
 data class EpgProgramme(
