@@ -33,7 +33,7 @@ private val SourceMuted = Color(0xFFA8B3C0)
 
 private data class M3uPreset(val name: String, val url: String)
 private val publicPresets = listOf(
-    M3uPreset("PerfectTV Free (Live/Movies)", RemoteSourceLoader.PERFECTTV_FREE_M3U),
+    M3uPreset("NovaStreamerTV Free (Live/Movies)", RemoteSourceLoader.PERFECTTV_FREE_M3U),
     M3uPreset("iptv-org | All channels", "https://iptv-org.github.io/iptv/index.m3u"),
     M3uPreset("iptv-org | Malaysia", "https://iptv-org.github.io/iptv/countries/my.m3u"),
     M3uPreset("iptv-org | Family", "https://iptv-org.github.io/iptv/categories/family.m3u"),
