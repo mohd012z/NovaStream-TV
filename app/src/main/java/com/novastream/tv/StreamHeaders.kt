@@ -6,27 +6,49 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
 object StreamPlayerFactory {
     data class BuiltPlayer(val player: ExoPlayer, val trackSelector: DefaultTrackSelector)
 
+    // Reuse one connection pool across every player/channel. This is especially
+    // useful for HLS where playlists and media segments are many small requests.
+    private val okHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+    }
+
     fun buildAdaptive(context: Context, item: PlaylistItem): BuiltPlayer {
         val headers = mutableMapOf<String, String>()
         item.referer?.takeIf { it.isNotBlank() }?.let { headers["Referer"] = it }
-        val http = DefaultHttpDataSource.Factory()
-            .setDefaultRequestProperties(headers)
-            // 8s connect balances fast failover against slow/overloaded IPTV servers;
-            // going much lower (e.g. 5s) caused spurious connect failures on some sources.
-            .setConnectTimeoutMs(8_000)
-            .setReadTimeoutMs(10_000)
-            .setAllowCrossProtocolRedirects(true)
-            .apply { item.userAgent?.takeIf { it.isNotBlank() }?.let { setUserAgent(it) } }
+        val userAgent = item.userAgent?.takeIf { it.isNotBlank() } ?: "NovaStream-TV/2.0"
+        val http: DataSource.Factory = if (item.streamUrl.startsWith("http", ignoreCase = true)) {
+            OkHttpDataSource.Factory(okHttpClient)
+                .setDefaultRequestProperties(headers)
+                .setUserAgent(userAgent)
+        } else {
+            // Keep local/non-HTTP compatibility instead of forcing OkHttp.
+            DefaultHttpDataSource.Factory()
+                .setDefaultRequestProperties(headers)
+                .setConnectTimeoutMs(10_000)
+                .setReadTimeoutMs(20_000)
+                .setAllowCrossProtocolRedirects(true)
+                .setUserAgent(userAgent)
+        }
 
         val sourceFactory: DataSource.Factory = when (item.kind) {
             MediaKind.MOVIE, MediaKind.SERIES -> MediaCache.dataSourceFactory(context, http)
@@ -51,13 +73,13 @@ object StreamPlayerFactory {
         val isLive = item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                if (isLive) 5_000 else 6_000,
-                if (isLive) 20_000 else 40_000,
-                if (isLive) 1_200 else 500,
-                if (isLive) 1_500 else 1_000
+                if (isLive) 12_000 else 8_000,
+                if (isLive) 45_000 else 50_000,
+                if (isLive) 2_000 else 750,
+                if (isLive) 4_000 else 1_500
             )
             .setPrioritizeTimeOverSizeThresholds(true) // catch up to live edge / start faster instead of waiting on byte thresholds
-            .setBackBuffer(15_000, true) // trim old buffered media so seeking/rebuffering stays cheap
+            .setBackBuffer(if (isLive) 10_000 else 30_000, true) // trim old buffered media so seeking/rebuffering stays cheap
             .build()
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
