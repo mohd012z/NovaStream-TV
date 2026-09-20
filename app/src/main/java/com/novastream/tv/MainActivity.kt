@@ -140,7 +140,7 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.HOME -> HomeScreen(activity, playlist, epgIndex, epg.size, loadingLibrary, { page = it }, { playing = it })
                             AppPage.LIVE -> MediaLibraryScreen("Live TV", playlist.filter { it.kind == MediaKind.LIVE || it.kind == MediaKind.UNKNOWN }, epgIndex) { playing = it }
                             AppPage.MOVIES -> MediaLibraryScreen("Movies", playlist.filter { it.kind == MediaKind.MOVIE }, epgIndex) { playing = it }
-                            AppPage.SERIES -> MediaLibraryScreen("Series", playlist.filter { it.kind == MediaKind.SERIES }, epgIndex) { playing = it }
+                            AppPage.SERIES -> MediaLibraryScreen("Series", playlist.filter { it.kind == MediaKind.SERIES }, epgIndex, groupShows = true) { playing = it }
                             AppPage.SEARCH -> SearchScreen(playlist, epgIndex) { playing = it }
                             AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
                             AppPage.SOURCES -> PlaylistSourcesScreen(repo, onLibraryChanged = { libraryVersion++ })
@@ -472,13 +472,85 @@ private fun PosterChannelCard(item: PlaylistItem, now: EpgProgramme?, onClick: (
     }
 }
 
+// A show's episodes grouped under one entry, keyed by the cleaned show name
+// (falling back to the raw title when no episode pattern was recognized).
+private data class ShowGroup(val name: String, val items: List<PlaylistItem>)
+
+private fun groupItemsByShow(items: List<PlaylistItem>): List<ShowGroup> {
+    val order = LinkedHashMap<String, MutableList<PlaylistItem>>()
+    items.forEach { item ->
+        val key = item.showName?.takeIf { it.isNotBlank() } ?: item.name
+        order.getOrPut(key) { mutableListOf() }.add(item)
+    }
+    return order.map { (name, list) ->
+        ShowGroup(name, list.sortedWith(compareBy({ it.episodeNumber ?: Int.MAX_VALUE }, { it.name })))
+    }
+}
+
 @Composable
-private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
+private fun ShowCard(group: ShowGroup, onClick: () -> Unit) {
+    val coverLogo = group.items.firstOrNull { !it.logoUrl.isNullOrBlank() }?.logoUrl
+    GlassRow(onClick = onClick) {
+        Box(
+            Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF0A111A)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!coverLogo.isNullOrBlank()) {
+                AsyncImage(model = coverLogo, contentDescription = group.name, modifier = Modifier.fillMaxSize().padding(8.dp), contentScale = ContentScale.Fit)
+            } else {
+                Text(group.name.take(3).uppercase(), color = Accent, fontWeight = FontWeight.Black)
+            }
+        }
+        Spacer(Modifier.width(13.dp))
+        Column(Modifier.weight(1f)) {
+            Text(group.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(group.items.first().groupTitle.orEmpty().ifBlank { "Series" }, color = Muted, fontSize = 11.sp, maxLines = 1)
+        }
+        Surface(shape = RoundedCornerShape(50), color = Accent.copy(alpha = .16f)) {
+            Text(
+                "${group.items.size} episode${if (group.items.size == 1) "" else "s"}",
+                Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                color = Accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun EpisodeListScreen(group: ShowGroup, epgIndex: EpgIndex, onBack: () -> Unit, play: (PlaylistItem) -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp, 18.dp, 30.dp, 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") }
+                Spacer(Modifier.width(4.dp))
+                Column {
+                    Text(group.name, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("${group.items.size} episodes", color = Muted)
+                }
+            }
+        }
+        items(group.items, key = { it.id }) { item ->
+            val now = epgIndex.now(item.tvgId)
+            ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
+        }
+    }
+}
+
+@Composable
+private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgIndex: EpgIndex, groupShows: Boolean = false, play: (PlaylistItem) -> Unit) {
     var group by remember { mutableStateOf("All") }
     var rating by remember { mutableStateOf("All") }
+    var openedShow by remember { mutableStateOf<String?>(null) }
     val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().take(20) }
     val filtered = remember(items, group) { if (group == "All") items else items.filter { it.groupTitle == group } }
+    val showGroups = remember(filtered, groupShows) { if (groupShows) groupItemsByShow(filtered) else emptyList() }
     val listState = rememberLazyListState()
+
+    val opened = if (groupShows) showGroups.firstOrNull { it.name == openedShow } else null
+    if (opened != null) {
+        EpisodeListScreen(opened, epgIndex, onBack = { openedShow = null }) { play(it) }
+        return
+    }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -489,7 +561,7 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
         ) {
             item {
                 Text(title, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                Text("${filtered.size} items", color = Muted)
+                Text(if (groupShows) "${showGroups.size} shows" else "${filtered.size} items", color = Muted)
             }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -498,7 +570,15 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
                     }
                 }
             }
-            if (filtered.isEmpty()) {
+            if (groupShows) {
+                if (showGroups.isEmpty()) {
+                    item { EmptyCard("Import an authorized M3U playlist in Settings") }
+                } else {
+                    items(showGroups, key = { it.name }) { g ->
+                        ShowCard(g) { openedShow = g.name }
+                    }
+                }
+            } else if (filtered.isEmpty()) {
                 item { EmptyCard("Import an authorized M3U playlist in Settings") }
             } else {
                 items(filtered, key = { it.id }) { item ->
@@ -507,7 +587,7 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
                 }
             }
         }
-        FastScrollbar(listState, filtered.size, Modifier.align(Alignment.CenterEnd))
+        FastScrollbar(listState, if (groupShows) showGroups.size else filtered.size, Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -562,6 +642,7 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
     var group by remember { mutableStateOf("All") }
     var rating by remember { mutableStateOf("All") }
     var country by remember { mutableStateOf("All") }
+    var openedShow by remember { mutableStateOf<String?>(null) }
 
     fun inferredYear(item: PlaylistItem): Int? =
         item.year ?: Regex("""\b(19|20)\d{2}\b""").find(item.name)?.value?.toIntOrNull()
@@ -607,6 +688,19 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
         }.take(300).toList()
     }
 
+    // Series and Short Drama results are grouped by show so a title with many
+    // episodes shows one card instead of flooding the results with every
+    // episode. A show matches the active filters as long as any of its
+    // episodes do, since the filtering above already ran per-episode.
+    val groupResults = type == "Series" || type == "Short Drama"
+    val resultGroups = remember(results, groupResults) { if (groupResults) groupItemsByShow(results) else emptyList() }
+    val opened = if (groupResults) resultGroups.firstOrNull { it.name == openedShow } else null
+
+    if (opened != null) {
+        EpisodeListScreen(opened, epgIndex, onBack = { openedShow = null }) { play(it) }
+        return
+    }
+
     val searchListState = rememberLazyListState()
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), state = searchListState, contentPadding = PaddingValues(18.dp, 18.dp, 30.dp, 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -641,14 +735,26 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
                     }
                 }
             }
-            item { Text("${results.size} results", color = Muted, fontSize = 12.sp) }
-            if (results.isEmpty()) item { EmptyCard("No matching content. Try removing a filter.") }
-            items(results, key = { it.id }) { item ->
-                val now = epgIndex.now(item.tvgId)
-                ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
+            item {
+                Text(
+                    if (groupResults) "${resultGroups.size} shows • ${results.size} episodes" else "${results.size} results",
+                    color = Muted, fontSize = 12.sp
+                )
+            }
+            if (groupResults) {
+                if (resultGroups.isEmpty()) item { EmptyCard("No matching content. Try removing a filter.") }
+                items(resultGroups, key = { it.name }) { g ->
+                    ShowCard(g) { openedShow = g.name }
+                }
+            } else {
+                if (results.isEmpty()) item { EmptyCard("No matching content. Try removing a filter.") }
+                items(results, key = { it.id }) { item ->
+                    val now = epgIndex.now(item.tvgId)
+                    ChannelRow(item, now, if (now != null) epgIndex.progress(now) else 0f) { play(item) }
+                }
             }
         }
-        FastScrollbar(searchListState, results.size, Modifier.align(Alignment.CenterEnd))
+        FastScrollbar(searchListState, if (groupResults) resultGroups.size else results.size, Modifier.align(Alignment.CenterEnd))
     }
 }
 
