@@ -512,26 +512,30 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
                 Text("${filtered.size} items", color = Muted)
             }
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Country", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-                        countries.forEach { value ->
-                            FilterChip(selected = country == value, onClick = { country = value }, label = { Text(value, maxLines = 1, fontSize = 11.sp) })
-                        }
-                    }
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Year", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-                        years.forEach { value ->
-                            FilterChip(selected = year == value, onClick = { year = value }, label = { Text(value, maxLines = 1, fontSize = 11.sp) })
-                        }
-                    }
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Group", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-                        groups.forEach { value ->
-                            FilterChip(selected = group == value, onClick = { group = value }, label = { Text(value, maxLines = 1, fontSize = 11.sp) })
-                        }
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CompactFilterMenu("Country", country, countries) { country = it }
+                    CompactFilterMenu("Year", year, years) { year = it }
+                    CompactFilterMenu("Group", group, groups) { group = it }
+                    if (country != "All" || year != "All" || group != "All") {
+                        AssistChip(
+                            onClick = { country = "All"; year = "All"; group = "All" },
+                            label = { Text("Reset", fontSize = 10.sp) },
+                            leadingIcon = { Icon(Icons.Filled.RestartAlt, null, modifier = Modifier.size(15.dp)) }
+                        )
                     }
                 }
+                val active = listOf(country, year, group).filter { it != "All" }
+                Text(
+                    (if (active.isEmpty()) "All content" else active.joinToString(" • ")) + "  •  ${filtered.size} results",
+                    color = Muted,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             if (filtered.isEmpty()) {
                 item { EmptyCard("Import an authorized M3U playlist in Settings") }
@@ -543,6 +547,29 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
             }
         }
         FastScrollbar(listState, filtered.size, Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+@Composable
+private fun CompactFilterMenu(label: String, selected: String, options: List<String>, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = { Text(if (selected == "All") label else "$label: $selected", fontSize = 10.sp, maxLines = 1) },
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, modifier = Modifier.size(16.dp)) }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { value ->
+                DropdownMenuItem(
+                    text = { Text(value, fontSize = 12.sp) },
+                    onClick = { onSelect(value); expanded = false },
+                    leadingIcon = {
+                        if (selected == value) Icon(Icons.Filled.Check, null, modifier = Modifier.size(16.dp))
+                    }
+                )
+            }
+        }
     }
 }
 
