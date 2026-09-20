@@ -44,6 +44,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-rtsp:1.5.1")
     implementation("androidx.media3:media3-database:1.5.1")
     implementation("androidx.media3:media3-datasource:1.5.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.5.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.media3:media3-ui:1.5.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
