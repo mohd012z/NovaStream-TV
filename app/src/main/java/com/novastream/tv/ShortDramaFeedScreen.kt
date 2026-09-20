@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +83,58 @@ fun ShortDramaFeedScreen(playlist: List<PlaylistItem>, onBack: () -> Unit) {
                 .background(Color.Black.copy(alpha = .45f), CircleShape)
         ) { Icon(Icons.Filled.ArrowBack, "Back", tint = Color.White) }
     }
+
+    if (showAppearance) {
+        ShortAppearanceDialog(
+            titleSize = titleSize,
+            infoSize = infoSize,
+            onTitleSize = { titleSize = it.coerceIn(10f, 72f) },
+            onInfoSize = { infoSize = it.coerceIn(10f, 72f) },
+            onDismiss = { showAppearance = false }
+        )
+    }
+}
+
+@Composable
+private fun ShortAppearanceDialog(
+    titleSize: Float,
+    infoSize: Float,
+    onTitleSize: (Float) -> Unit,
+    onInfoSize: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Shorts text size") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Title: ${titleSize.toInt()} sp")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { onTitleSize(titleSize - 1f) }) { Text("−") }
+                    Slider(
+                        value = titleSize,
+                        onValueChange = onTitleSize,
+                        valueRange = 10f..72f,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                    )
+                    OutlinedButton(onClick = { onTitleSize(titleSize + 1f) }) { Text("+") }
+                }
+                Text("Episode/info: ${infoSize.toInt()} sp")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { onInfoSize(infoSize - 1f) }) { Text("−") }
+                    Slider(
+                        value = infoSize,
+                        onValueChange = onInfoSize,
+                        valueRange = 10f..72f,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                    )
+                    OutlinedButton(onClick = { onInfoSize(infoSize + 1f) }) { Text("+") }
+                }
+                Text("10–72 sp • live preview on the current Short", fontSize = 11.sp, color = Color.Gray)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
 }
 
 private fun buildShortDramaQueue(playlist: List<PlaylistItem>): List<PlaylistItem> {
@@ -101,6 +154,9 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
     var retryCount by remember(item.id) { mutableIntStateOf(0) }
     var bufferingSinceMs by remember(item.id) { mutableLongStateOf(0L) }
     var showRecovery by remember(item.id) { mutableStateOf(false) }
+    var showAppearance by remember(item.id) { mutableStateOf(false) }
+    var titleSize by remember(item.id) { mutableFloatStateOf(20f) }
+    var infoSize by remember(item.id) { mutableFloatStateOf(13f) }
     val store = remember { PlaybackStore(context) }
     val player = remember(item.id) { StreamPlayerFactory.build(context, item) }
 
@@ -250,12 +306,12 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
                 item.showName?.takeIf { it.isNotBlank() } ?: item.name,
                 color = Color.White,
                 fontWeight = FontWeight.Black,
-                fontSize = 20.sp,
+                fontSize = titleSize.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             item.episodeNumber?.let {
-                Text("Episode $it", color = ShortsAccent, fontSize = 13.sp)
+                Text("Episode $it", color = ShortsAccent, fontSize = infoSize.sp)
             }
         }
 
@@ -267,6 +323,14 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            IconButton(
+                onClick = { showAppearance = true },
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(Color.Black.copy(alpha = .45f), CircleShape)
+            ) {
+                Icon(Icons.Filled.TextFields, "Text appearance", tint = Color.White)
+            }
             IconButton(
                 onClick = {
                     isMuted = !isMuted
