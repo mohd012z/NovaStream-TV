@@ -28,6 +28,7 @@ object M3uParser {
                     val group = attrs["group-title"]
                     val parsedUrl = parseUrlAndHeaders(line)
                     val kind = classify(group, parsedUrl.url)
+                    val seriesInfo = if (kind == MediaKind.SERIES || kind == MediaKind.SHORT_DRAMA) parseSeriesInfo(name) else null
                     result += PlaylistItem(
                         id = stableId(parsedUrl.url, attrs["tvg-id"] ?: name),
                         name = name,
@@ -39,7 +40,9 @@ object M3uParser {
                         userAgent = parsedUrl.userAgent ?: pendingUserAgent,
                         referer = parsedUrl.referer ?: pendingReferer,
                         country = attrs["tvg-country"]?.takeIf { it.isNotBlank() },
-                        kind = kind
+                        kind = kind,
+                        showName = seriesInfo?.first,
+                        episodeNumber = seriesInfo?.second
                     )
                     info = null
                     pendingUserAgent = null
@@ -81,6 +84,29 @@ object M3uParser {
             "live" in g || u.endsWith(".m3u8") || u.contains("/live/") -> MediaKind.LIVE
             else -> MediaKind.UNKNOWN
         }
+    }
+
+    // Recognizes common episode-suffix patterns on a title such as:
+    // "Bulan Henti Bicara Ep01", "Bulan Henti Bicara Ep 01", "Show - Episode 12",
+    // "Show E07", "Show S01E07", "Show - Ep.1", "Show 12".
+    // Returns the cleaned show name (falling back to the original title when
+    // nothing matches) and the parsed episode number (null when not found).
+    private val episodePatterns = listOf(
+        Regex("""^(.*?)[\s._-]+[Ss]\d{1,2}[\s._-]*[Ee][Pp]?\.?\s*(\d{1,4})\s*$"""),
+        Regex("""^(.*?)[\s._-]+[Ee]pisode\.?\s*(\d{1,4})\s*$""", RegexOption.IGNORE_CASE),
+        Regex("""^(.*?)[\s._-]+[Ee]p\.?\s*(\d{1,4})\s*$""", RegexOption.IGNORE_CASE),
+        Regex("""^(.*?)[\s._-]+[Ee](\d{1,4})\s*$"""),
+        Regex("""^(.*?)[\s._-]+\(?(\d{1,4})\)?\s*$""")
+    )
+
+    fun parseSeriesInfo(title: String): Pair<String, Int?> {
+        for (pattern in episodePatterns) {
+            val match = pattern.find(title) ?: continue
+            val show = match.groupValues[1].trim().trim('-', '.', ':', '_').trim()
+            val episode = match.groupValues[2].toIntOrNull()
+            if (show.isNotBlank() && episode != null) return show to episode
+        }
+        return title to null
     }
 
     private fun stableId(url: String, seed: String): String {
