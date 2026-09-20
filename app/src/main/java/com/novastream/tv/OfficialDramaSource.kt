@@ -4,6 +4,7 @@ import java.net.URI
 
 enum class DramaAccess { PUBLIC_STREAM, OFFICIAL_PAGE, METADATA_ONLY }
 enum class DramaForm { FULL, EPISODES, SHORT, CLIP, UNKNOWN }
+enum class AdPolicy { UNKNOWN, AD_FREE, AD_SUPPORTED }
 
 data class OfficialDramaSource(
     val provider: String,
@@ -14,6 +15,7 @@ data class OfficialDramaSource(
     val runtimeMinutes: Int? = null,
     val access: DramaAccess = DramaAccess.OFFICIAL_PAGE,
     val form: DramaForm = DramaForm.UNKNOWN,
+    val adPolicy: AdPolicy = AdPolicy.UNKNOWN,
     val verifiedAt: Long = System.currentTimeMillis()
 )
 
@@ -31,8 +33,21 @@ data class DramaSourceValidation(
  * NovaStream validation may become PUBLIC_STREAM.
  */
 object OfficialDramaSourceValidator {
+    fun filterAdFree(items: List<OfficialDramaSource>, strict: Boolean = true): List<OfficialDramaSource> =
+        items.filter { source ->
+            when (source.adPolicy) {
+                AdPolicy.AD_FREE -> true
+                AdPolicy.AD_SUPPORTED -> false
+                AdPolicy.UNKNOWN -> !strict
+            }
+        }
+
     fun validate(source: OfficialDramaSource): DramaSourceValidation {
         if (!isHttpUrl(source.url)) return DramaSourceValidation(false, false, "Unsupported URL")
+
+        if (source.adPolicy == AdPolicy.AD_SUPPORTED) {
+            return DramaSourceValidation(true, false, "Ad-supported source filtered")
+        }
 
         return when (source.access) {
             DramaAccess.METADATA_ONLY ->
