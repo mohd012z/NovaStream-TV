@@ -55,8 +55,15 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
     var status by remember { mutableStateOf("") }
     var busyId by remember { mutableStateOf<String?>(null) }
     var addingAll by remember { mutableStateOf(false) }
+    val selectedIds = remember { mutableStateListOf<String>() }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val selectionMode = selectedIds.isNotEmpty()
 
     fun reload() { sources = store.all() }
+    fun clearSelection() { selectedIds.clear() }
+    fun toggleSelect(id: String) {
+        if (selectedIds.contains(id)) selectedIds.remove(id) else selectedIds.add(id)
+    }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -65,47 +72,67 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Playlists", fontSize = 28.sp, fontWeight = FontWeight.Black)
-                        Text("${sources.size} saved sources • ${sources.sumOf { it.itemCount }} indexed items", color = SourceMuted)
-                    }
-                    if (addingAll) CircularProgressIndicator(Modifier.size(22.dp).padding(end = 6.dp), strokeWidth = 2.dp)
-                    IconButton(enabled = !addingAll, onClick = {
-                        scope.launch {
-                            addingAll = true
-                            val existingUrls = sources.map { it.url }.toSet()
-                            val missing = publicPresets.filter { it.url !in existingUrls }
-                            for (preset in missing) {
-                                status = "Adding ${preset.name}…"
-                                val result = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(preset.url) }
-                                if (result.ok) {
-                                    val count = withContext(Dispatchers.Default) { M3uParser.parse(result.body).size }
-                                    if (count > 0) {
-                                        store.create(preset.name, preset.url, result.body, count)
+                if (selectionMode) {
+                    BulkActionBar(
+                        selectedCount = selectedIds.size,
+                        onEnable = {
+                            selectedIds.forEach { store.setEnabled(it, true) }
+                            store.rebuildLibrary(repo); reload(); onLibraryChanged()
+                            status = "Enabled ${selectedIds.size} source(s)"
+                            clearSelection()
+                        },
+                        onDisable = {
+                            selectedIds.forEach { store.setEnabled(it, false) }
+                            store.rebuildLibrary(repo); reload(); onLibraryChanged()
+                            status = "Disabled ${selectedIds.size} source(s)"
+                            clearSelection()
+                        },
+                        onDelete = { confirmDelete = true },
+                        onCancel = { clearSelection() }
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Playlists", fontSize = 28.sp, fontWeight = FontWeight.Black)
+                            Text("${sources.size} saved sources • ${sources.sumOf { it.itemCount }} indexed items", color = SourceMuted)
+                        }
+                        if (addingAll) CircularProgressIndicator(Modifier.size(22.dp).padding(end = 6.dp), strokeWidth = 2.dp)
+                        IconButton(enabled = !addingAll, onClick = {
+                            scope.launch {
+                                addingAll = true
+                                val existingUrls = sources.map { it.url }.toSet()
+                                val missing = publicPresets.filter { it.url !in existingUrls }
+                                for (preset in missing) {
+                                    status = "Adding ${preset.name}…"
+                                    val result = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(preset.url) }
+                                    if (result.ok) {
+                                        val count = withContext(Dispatchers.Default) { M3uParser.parse(result.body).size }
+                                        if (count > 0) {
+                                            store.create(preset.name, preset.url, result.body, count)
+                                        }
                                     }
                                 }
+                                store.rebuildLibrary(repo)
+                                reload()
+                                onLibraryChanged()
+                                status = if (missing.isEmpty()) "All suggested playlists already added" else "Added ${missing.size} suggested playlists"
+                                addingAll = false
                             }
-                            store.rebuildLibrary(repo)
-                            reload()
-                            onLibraryChanged()
-                            status = if (missing.isEmpty()) "All suggested playlists already added" else "Added ${missing.size} suggested playlists"
-                            addingAll = false
-                        }
-                    }) { Icon(Icons.Filled.PlaylistAdd, "Add all suggested playlists", tint = SourceAccent) }
-                    IconButton(onClick = {
-                        sources.filter { it.url.startsWith("http") }.forEach { source ->
-                            scope.launch {
-                                busyId = source.id
-                                val result = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(source.url) }
-                                if (result.ok) {
-                                    val count = withContext(Dispatchers.Default) { M3uParser.parse(result.body).size }
-                                    store.upsert(source.copy(itemCount = count, updatedAt = System.currentTimeMillis(), healthy = count > 0, message = if (count > 0) "Ready" else "No playable entries"), result.body.takeIf { count > 0 })
-                                } else store.upsert(source.copy(healthy = false, message = result.message, updatedAt = System.currentTimeMillis()))
-                                store.rebuildLibrary(repo); reload(); onLibraryChanged(); busyId = null
+                        }) { Icon(Icons.Filled.PlaylistAdd, "Add all suggested playlists", tint = SourceAccent) }
+                        IconButton(onClick = {
+                            sources.filter { it.url.startsWith("http") }.forEach { source ->
+                                scope.launch {
+                                    busyId = source.id
+                                    val result = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(source.url) }
+                                    if (result.ok) {
+                                        val count = withContext(Dispatchers.Default) { M3uParser.parse(result.body).size }
+                                        store.upsert(source.copy(itemCount = count, updatedAt = System.currentTimeMillis(), healthy = count > 0, message = if (count > 0) "Ready" else "No playable entries"), result.body.takeIf { count > 0 })
+                                    } else store.upsert(source.copy(healthy = false, message = result.message, updatedAt = System.currentTimeMillis()))
+                                    store.rebuildLibrary(repo); reload(); onLibraryChanged(); busyId = null
+                                }
                             }
-                        }
-                    }) { Icon(Icons.Filled.Refresh, "Refresh all", tint = SourceAccent) }
+                        }) { Icon(Icons.Filled.Refresh, "Refresh all", tint = SourceAccent) }
+                    }
                 }
             }
             if (status.isNotBlank()) item { Text(status, color = SourceAccent2, fontSize = 12.sp) }
@@ -123,6 +150,9 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
                 SourceCard(
                     source = source,
                     busy = busyId == source.id,
+                    selectionMode = selectionMode,
+                    selected = selectedIds.contains(source.id),
+                    onToggleSelect = { toggleSelect(source.id) },
                     onRefresh = {
                         scope.launch {
                             busyId = source.id; status = "Refreshing ${source.name}…"
@@ -147,12 +177,14 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
             }
         }
 
-        FloatingActionButton(
-            onClick = { editing = null; dialog = true },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp),
-            containerColor = SourceAccent,
-            contentColor = Color(0xFF071017)
-        ) { Icon(Icons.Filled.Add, "Add playlist", modifier = Modifier.size(30.dp)) }
+        if (!selectionMode) {
+            FloatingActionButton(
+                onClick = { editing = null; dialog = true },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp),
+                containerColor = SourceAccent,
+                contentColor = Color(0xFF071017)
+            ) { Icon(Icons.Filled.Add, "Add playlist", modifier = Modifier.size(30.dp)) }
+        }
     }
 
     if (dialog) {
@@ -183,28 +215,90 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
             }
         )
     }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete ${selectedIds.size} playlist(s)?", fontWeight = FontWeight.Bold) },
+            text = { Text("This removes the selected playlist sources and their indexed items. This cannot be undone.", color = SourceMuted) },
+            confirmButton = {
+                Button(onClick = {
+                    val ids = selectedIds.toList()
+                    ids.forEach { store.delete(it) }
+                    store.rebuildLibrary(repo); reload(); onLibraryChanged()
+                    status = "Deleted ${ids.size} source(s)"
+                    confirmDelete = false
+                    clearSelection()
+                }) { Text("Delete") }
+            },
+            dismissButton = { OutlinedButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
+        )
+    }
 }
 
 @Composable
-private fun SourceCard(source: PlaylistSource, busy: Boolean, onRefresh: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun BulkActionBar(
+    selectedCount: Int,
+    onEnable: () -> Unit,
+    onDisable: () -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit
+) {
     Surface(shape = RoundedCornerShape(20.dp), color = SourcePanel) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (source.healthy) Icons.Filled.CheckCircle else Icons.Filled.Error, null, tint = if (source.healthy) SourceAccent2 else MaterialTheme.colorScheme.error)
+                Text("$selectedCount selected", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, "Cancel selection", tint = SourceMuted) }
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(onClick = onEnable, label = { Text("Enable selected") }, leadingIcon = { Icon(Icons.Filled.Visibility, null) })
+                AssistChip(onClick = onDisable, label = { Text("Disable selected") }, leadingIcon = { Icon(Icons.Filled.VisibilityOff, null) })
+                AssistChip(onClick = onDelete, label = { Text("Delete selected") }, leadingIcon = { Icon(Icons.Filled.Delete, null) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceCard(
+    source: PlaylistSource,
+    busy: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit,
+    onRefresh: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(shape = RoundedCornerShape(20.dp), color = SourcePanel) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = selected, onCheckedChange = { onToggleSelect() })
+                Icon(
+                    if (source.healthy) Icons.Filled.CheckCircle else Icons.Filled.Error,
+                    null,
+                    tint = if (!source.enabled) SourceMuted else if (source.healthy) SourceAccent2 else MaterialTheme.colorScheme.error
+                )
                 Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(source.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f).clickable(enabled = true) { onToggleSelect() }) {
+                    Text(source.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (source.enabled) Color.Unspecified else SourceMuted)
                     Text(source.url, color = SourceMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
             }
             Spacer(Modifier.height(9.dp))
-            Text("${source.itemCount} channels • ${source.message}", color = if (source.healthy) SourceAccent2 else SourceMuted, fontSize = 12.sp)
+            Text(
+                "${source.itemCount} channels • ${if (source.enabled) source.message else "Disabled"}",
+                color = if (!source.enabled) SourceMuted else if (source.healthy) SourceAccent2 else SourceMuted,
+                fontSize = 12.sp
+            )
             if (source.updatedAt > 0) Text("Updated ${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(source.updatedAt))}", color = SourceMuted, fontSize = 11.sp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = onRefresh, enabled = !busy) { Icon(Icons.Filled.Refresh, "Refresh") }
-                IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit") }
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Delete") }
+            if (!selectionMode) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    IconButton(onClick = onRefresh, enabled = !busy) { Icon(Icons.Filled.Refresh, "Refresh") }
+                    IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit") }
+                    IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Delete") }
+                }
             }
         }
     }
