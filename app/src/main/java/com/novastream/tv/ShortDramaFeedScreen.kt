@@ -36,13 +36,27 @@ private val ShortsAccent = Color(0xFF67D6FF)
 // show its episodes stay in order so swiping forward inside a show plays
 // the next episode, not a random one.
 @Composable
-fun ShortDramaFeedScreen(playlist: List<PlaylistItem>, onBack: () -> Unit) {
+fun ShortDramaFeedScreen(
+    playlist: List<PlaylistItem>,
+    onBack: () -> Unit,
+    onOpenMedia: (PlaylistItem) -> Unit = {}
+) {
     val queue = remember(playlist) { buildShortDramaQueue(playlist) }
     val pagerState = rememberPagerState(pageCount = { queue.size })
     val scope = rememberCoroutineScope()
     var countdownPage by remember { mutableIntStateOf(-1) }
     var countdown by remember { mutableIntStateOf(0) }
     var completedItem by remember { mutableStateOf<PlaylistItem?>(null) }
+    val playbackStore = remember { PlaybackStore(LocalContext.current) }
+    val continueWatching = remember(completedItem) {
+        playbackStore.recent(8).mapNotNull { record ->
+            playlist.firstOrNull { it.id == record.id && it.kind != MediaKind.SHORT_DRAMA && it.kind != MediaKind.LIVE }
+                ?.let { it to record }
+        }.take(3)
+    }
+    val moviePick = remember(completedItem, playlist) { playlist.firstOrNull { it.kind == MediaKind.MOVIE } }
+    val seriesPick = remember(completedItem, playlist) { playlist.firstOrNull { it.kind == MediaKind.SERIES } }
+    val livePick = remember(completedItem, playlist) { playlist.firstOrNull { it.kind == MediaKind.LIVE } }
 
     LaunchedEffect(countdownPage, countdown) {
         if (countdownPage >= 0 && countdown > 0) {
@@ -128,6 +142,32 @@ fun ShortDramaFeedScreen(playlist: List<PlaylistItem>, onBack: () -> Unit) {
                     Text("Series complete", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp)
                     Text(finished.showName ?: finished.name, color = Color.White.copy(alpha = .72f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(12.dp))
+                    if (continueWatching.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("Continue Watching", color = Color.White, fontWeight = FontWeight.SemiBold)
+                        continueWatching.forEach { (media, record) ->
+                            TextButton(onClick = { onOpenMedia(media) }, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    media.name + " • " + (record.progress * 100).toInt() + "%",
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        moviePick?.let { movie ->
+                            TextButton(onClick = { onOpenMedia(movie) }) { Text("Movie", color = ShortsAccent) }
+                        }
+                        seriesPick?.let { series ->
+                            TextButton(onClick = { onOpenMedia(series) }) { Text("Series", color = ShortsAccent) }
+                        }
+                        livePick?.let { live ->
+                            TextButton(onClick = { onOpenMedia(live) }) { Text("Live TV", color = ShortsAccent) }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = {
                             completedItem = null
