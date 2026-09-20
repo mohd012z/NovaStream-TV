@@ -20,7 +20,7 @@ object PublicM3uDiscoveryEngine {
         "India" to "in", "Pakistan" to "pk", "Bangladesh" to "bd", "Sri Lanka" to "lk",
         "Nepal" to "np", "Mongolia" to "mn"
     )
-    private val categories = listOf("news", "sports", "family", "movies", "music", "documentary")
+    private val categories = listOf("news", "sports", "family", "movies", "series", "music", "entertainment", "documentary", "animation")
 
     fun discover(query: String): List<PublicM3uCandidate> {
         val q = query.trim().lowercase()
