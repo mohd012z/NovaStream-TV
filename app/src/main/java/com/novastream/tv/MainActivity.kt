@@ -469,7 +469,22 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
     var rating by remember { mutableStateOf("All") }
     val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().take(20) }
     val filtered = remember(items, group) { if (group == "All") items else items.filter { it.groupTitle == group } }
-    val listState = rememberLazyListState()
+    val browseState = remember { BrowseStateStore(LocalContext.current) }
+    val browseKey = remember(title, group) { "library_" + title + "_" + group }
+    val initialBrowsePosition = remember(browseKey) { browseState.position(browseKey) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialBrowsePosition.index,
+        initialFirstVisibleItemScrollOffset = initialBrowsePosition.offset
+    )
+    DisposableEffect(browseKey, listState) {
+        onDispose {
+            browseState.savePosition(
+                browseKey,
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset
+            )
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -546,13 +561,24 @@ private fun GlassRow(onClick: () -> Unit, content: @Composable RowScope.() -> Un
 
 @Composable
 private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
-    var query by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("All") }
-    var year by remember { mutableStateOf("All") }
-    var genre by remember { mutableStateOf("All") }
-    var group by remember { mutableStateOf("All") }
-    var rating by remember { mutableStateOf("All") }
-    var country by remember { mutableStateOf("All") }
+    val browseState = remember { BrowseStateStore(LocalContext.current) }
+    var query by remember { mutableStateOf(browseState.searchQuery) }
+    var type by remember { mutableStateOf(browseState.filter("type")) }
+    var year by remember { mutableStateOf(browseState.filter("year")) }
+    var genre by remember { mutableStateOf(browseState.filter("genre")) }
+    var group by remember { mutableStateOf(browseState.filter("group")) }
+    var rating by remember { mutableStateOf(browseState.filter("rating")) }
+    var country by remember { mutableStateOf(browseState.filter("country")) }
+
+    LaunchedEffect(query, type, year, genre, group, rating, country) {
+        browseState.searchQuery = query
+        browseState.saveFilter("type", type)
+        browseState.saveFilter("year", year)
+        browseState.saveFilter("genre", genre)
+        browseState.saveFilter("group", group)
+        browseState.saveFilter("rating", rating)
+        browseState.saveFilter("country", country)
+    }
 
     fun inferredYear(item: PlaylistItem): Int? =
         item.year ?: Regex("""\b(19|20)\d{2}\b""").find(item.name)?.value?.toIntOrNull()
@@ -595,7 +621,23 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
         }.take(300).toList()
     }
 
-    val searchListState = rememberLazyListState()
+    val searchKey = remember(query, type, year, genre, group, rating, country) {
+        "search_" + listOf(query, type, year, genre, group, rating, country).joinToString("|").hashCode()
+    }
+    val initialSearchPosition = remember(searchKey) { browseState.position(searchKey) }
+    val searchListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialSearchPosition.index,
+        initialFirstVisibleItemScrollOffset = initialSearchPosition.offset
+    )
+    DisposableEffect(searchKey, searchListState) {
+        onDispose {
+            browseState.savePosition(
+                searchKey,
+                searchListState.firstVisibleItemIndex,
+                searchListState.firstVisibleItemScrollOffset
+            )
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), state = searchListState, contentPadding = PaddingValues(18.dp, 18.dp, 30.dp, 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
