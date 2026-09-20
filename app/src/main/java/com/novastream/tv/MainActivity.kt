@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class OrientationChoice { PORTRAIT, LANDSCAPE, AUTO }
-enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, SOURCES, DOWNLOADS, SETTINGS }
+enum class AppPage { HOME, LIVE, MOVIES, SERIES, SHORT_DRAMA, MUSIC, MUSIC_VIDEO, SEARCH, HISTORY, SOURCES, DOWNLOADS, SETTINGS }
 
 @Composable
 fun NovaStreamApp(activity: MainActivity) {
@@ -141,6 +141,9 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.LIVE -> MediaLibraryScreen("Live TV", playlist.filter { it.kind == MediaKind.LIVE || it.kind == MediaKind.UNKNOWN }, epgIndex) { playing = it }
                             AppPage.MOVIES -> MediaLibraryScreen("Movies", playlist.filter { it.kind == MediaKind.MOVIE }, epgIndex) { playing = it }
                             AppPage.SERIES -> MediaLibraryScreen("Series", playlist.filter { it.kind == MediaKind.SERIES }, epgIndex) { playing = it }
+                            AppPage.SHORT_DRAMA -> MediaLibraryScreen("Short Drama", playlist.filter { NovaStreamLibrary.describe(it.streamUrl, it.kind, it.groupTitle).profile == NovaStreamLibrary.PlaybackProfile.SHORT }, epgIndex) { playing = it }
+                            AppPage.MUSIC -> MediaLibraryScreen("Music", playlist.filter { NovaStreamLibrary.describe(it.streamUrl, it.kind, it.groupTitle).profile == NovaStreamLibrary.PlaybackProfile.MUSIC }, epgIndex) { playing = it }
+                            AppPage.MUSIC_VIDEO -> MediaLibraryScreen("Music Video", playlist.filter { NovaStreamLibrary.describe(it.streamUrl, it.kind, it.groupTitle).profile == NovaStreamLibrary.PlaybackProfile.MUSIC_VIDEO }, epgIndex) { playing = it }
                             AppPage.SEARCH -> SearchScreen(playlist, epgIndex) { playing = it }
                             AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
                             AppPage.SOURCES -> PlaylistSourcesScreen(repo, onLibraryChanged = { libraryVersion++ })
@@ -199,6 +202,9 @@ private fun BottomBar(current: AppPage, onSelect: (AppPage) -> Unit) {
         listOf(
             Triple(AppPage.HOME, "Home", Icons.Filled.Home),
             Triple(AppPage.LIVE, "Live", Icons.Filled.LiveTv),
+            Triple(AppPage.SHORT_DRAMA, "Shorts", Icons.Filled.SmartDisplay),
+            Triple(AppPage.MUSIC, "Music", Icons.Filled.MusicNote),
+            Triple(AppPage.MUSIC_VIDEO, "Music MV", Icons.Filled.VideoLibrary),
             Triple(AppPage.SEARCH, "Search", Icons.Filled.Search),
             Triple(AppPage.HISTORY, "History", Icons.Filled.History)
         ).forEach { (page, label, icon) ->
@@ -314,6 +320,9 @@ private fun HomeScreen(
                 item { QuickAction("Live", Icons.Filled.LiveTv) { navigate(AppPage.LIVE) } }
                 item { QuickAction("Movies", Icons.Filled.Movie) { navigate(AppPage.MOVIES) } }
                 item { QuickAction("Series", Icons.Filled.VideoLibrary) { navigate(AppPage.SERIES) } }
+                item { QuickAction("Short Drama", Icons.Filled.SmartDisplay) { navigate(AppPage.SHORT_DRAMA) } }
+                item { QuickAction("Music", Icons.Filled.MusicNote) { navigate(AppPage.MUSIC) } }
+                item { QuickAction("Music Video", Icons.Filled.VideoLibrary) { navigate(AppPage.MUSIC_VIDEO) } }
                 item { QuickAction("Playlists", Icons.Filled.PlaylistPlay) { navigate(AppPage.SOURCES) } }
                 item { QuickAction("Search", Icons.Filled.Search) { navigate(AppPage.SEARCH) } }
             }
