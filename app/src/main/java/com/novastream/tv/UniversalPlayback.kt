@@ -81,6 +81,12 @@ data class PlaybackTraceSnapshot(
     val durationMs: Long = 0L,
     val retryCount: Int = 0,
     val droppedFrames: Int = 0,
+    val bandwidthEstimateBps: Long = 0L,
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
+    val videoBitrate: Int = 0,
+    val videoMimeType: String? = null,
+    val videoCodecs: String? = null,
     val lastError: String? = null
 ) {
     val bufferedAheadMs: Long
@@ -104,6 +110,8 @@ data class PlaybackTraceSnapshot(
             append(bufferedAheadMs / 1000f)
             append("s")
             if (retryCount > 0) append(" • recovery ").append(retryCount)
+            if (bandwidthEstimateBps > 0) append(" • net ").append(bandwidthEstimateBps / 1_000_000f).append("Mbps")
+            if (videoHeight > 0) append(" • ").append(videoHeight).append("p")
             if (droppedFrames > 0) append(" • dropped ").append(droppedFrames)
         }
 }
