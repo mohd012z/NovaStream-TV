@@ -704,6 +704,7 @@ private fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { PlayerPreferences(context) }
+    val networkPrefs = remember { NetworkProtectionPreferences(context) }
     val appearance = remember { AppearancePreferences(context) }
     var themePreset by remember { mutableStateOf(appearance.theme) }
     var fontPreset by remember { mutableStateOf(appearance.font) }
@@ -713,6 +714,9 @@ private fun SettingsScreen(
     var brightness by remember { mutableFloatStateOf(prefs.brightnessSensitivity) }
     var volume by remember { mutableFloatStateOf(prefs.volumeSensitivity) }
     var autoRetry by remember { mutableStateOf(prefs.autoRetry) }
+    var dnsProfileId by remember { mutableStateOf(networkPrefs.dnsProfileId) }
+    var strictAdFree by remember { mutableStateOf(networkPrefs.strictAdFreeSources) }
+    var showProtectionStatus by remember { mutableStateOf(networkPrefs.showProtectionStatus) }
     var showM3uUrlDialog by remember { mutableStateOf(false) }
 
     val m3uLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -781,6 +785,71 @@ private fun SettingsScreen(
             }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Filled.CloudSync, null); Spacer(Modifier.width(8.dp)); Text("Load PerfectTV XMLTV EPG") }
         }
         if (status.isNotBlank()) item { Text(status, color = Accent2) }
+
+        item { SectionLabel("NETWORK & AD PROTECTION") }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("DNS profile", color = Muted)
+                DnsProtectionEngine.profiles.forEach { profile ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            dnsProfileId = profile.id
+                            networkPrefs.dnsProfileId = profile.id
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (dnsProfileId == profile.id) Accent.copy(alpha = .12f) else Panel2
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = dnsProfileId == profile.id,
+                                onClick = {
+                                    dnsProfileId = profile.id
+                                    networkPrefs.dnsProfileId = profile.id
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(profile.name, fontWeight = FontWeight.SemiBold)
+                                Text(profile.description, color = Muted, fontSize = 11.sp)
+                                profile.privateDnsHostname?.let {
+                                    Text(it, color = Accent2, fontSize = 11.sp)
+                                }
+                            }
+                            if (profile.filtersAds) {
+                                AssistChip(onClick = {}, label = { Text("Ads/trackers") })
+                            }
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = strictAdFree, onCheckedChange = {
+                        strictAdFree = it
+                        networkPrefs.strictAdFreeSources = it
+                    })
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("Strict Ad-Free Sources")
+                        Text("Hide known ad-supported and unverified ad-status discoveries.", color = Muted, fontSize = 11.sp)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = showProtectionStatus, onCheckedChange = {
+                        showProtectionStatus = it
+                        networkPrefs.showProtectionStatus = it
+                    })
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("Show protection status")
+                        Text("Show DNS/source filtering status without claiming embedded stream ads are removed.", color = Muted, fontSize = 11.sp)
+                    }
+                }
+                Text(
+                    "DNS profiles describe protection options; NovaStream does not silently change Android's global Private DNS setting.",
+                    color = Accent2,
+                    fontSize = 11.sp
+                )
+            }
+        }
 
         item { SectionLabel("APPEARANCE") }
         item {
