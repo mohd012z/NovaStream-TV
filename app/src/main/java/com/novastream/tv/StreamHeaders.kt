@@ -12,6 +12,9 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
 @OptIn(UnstableApi::class)
@@ -62,10 +65,22 @@ object StreamPlayerFactory {
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
 
+        // Compatibility mode for imperfect IPTV / short-drama MPEG-TS segments.
+        // Some providers omit AUDs or IDR keyframes; Media3 can otherwise appear
+        // permanently buffered even though network data is arriving.
+        val extractors = DefaultExtractorsFactory()
+            .setTsExtractorFlags(
+                DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
+                    DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
+            )
+        val mediaSourceFactory = DefaultMediaSourceFactory(context, extractors)
+            .setDataSourceFactory(sourceFactory)
+            .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(3))
+
         val player = ExoPlayer.Builder(context, renderers)
             .setTrackSelector(selector)
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(sourceFactory))
+            .setMediaSourceFactory(mediaSourceFactory)
             .setBandwidthMeter(bandwidthMeter)
             .build()
         return BuiltPlayer(player, selector, networkStats)
