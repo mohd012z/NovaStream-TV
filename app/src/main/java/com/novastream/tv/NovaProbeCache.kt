@@ -22,7 +22,9 @@ class NovaProbeCache(context: Context) {
         val startupMs: Long,
         val firstByteMs: Long,
         val lastHealthyAtMs: Long,
-        val failures: Int
+        val failures: Int,
+        val stalls: Int,
+        val preferredMaxHeight: Int
     )
 
     private val prefs: SharedPreferences =
@@ -55,7 +57,9 @@ class NovaProbeCache(context: Context) {
                 startupMs = j.optLong("startupMs", -1L),
                 firstByteMs = j.optLong("firstByteMs", -1L),
                 lastHealthyAtMs = j.optLong("lastHealthyAtMs", 0L),
-                failures = j.optInt("failures", 0)
+                failures = j.optInt("failures", 0),
+                stalls = j.optInt("stalls", 0),
+                preferredMaxHeight = j.optInt("preferredMaxHeight", Int.MAX_VALUE)
             )
         }.getOrNull()
     }
@@ -87,6 +91,8 @@ class NovaProbeCache(context: Context) {
             .put("firstByteMs", if (firstByteMs >= 0) firstByteMs else old?.firstByteMs ?: -1L)
             .put("lastHealthyAtMs", if (healthy) System.currentTimeMillis() else old?.lastHealthyAtMs ?: 0L)
             .put("failures", old?.failures ?: 0)
+            .put("stalls", old?.stalls ?: 0)
+            .put("preferredMaxHeight", old?.preferredMaxHeight ?: Int.MAX_VALUE)
         isLive?.let { j.put("isLive", it) }
         isSeekable?.let { j.put("isSeekable", it) }
         prefs.edit().putString(key, j.toString()).apply()
@@ -98,6 +104,19 @@ class NovaProbeCache(context: Context) {
         runCatching {
             val j = JSONObject(raw)
             j.put("failures", old.failures + 1)
+            prefs.edit().putString(old.key, j.toString()).apply()
+        }
+    }
+
+    fun markStall(url: String, maxHeight: Int) {
+        val old = get(url) ?: return
+        val raw = prefs.getString(old.key, null) ?: return
+        runCatching {
+            val j = JSONObject(raw)
+            j.put("stalls", old.stalls + 1)
+            val previous = old.preferredMaxHeight
+            val learned = if (previous == Int.MAX_VALUE) maxHeight else minOf(previous, maxHeight)
+            j.put("preferredMaxHeight", learned)
             prefs.edit().putString(old.key, j.toString()).apply()
         }
     }
