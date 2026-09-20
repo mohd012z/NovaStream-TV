@@ -44,9 +44,9 @@ object NovaStreamLibrary {
         }
         val group = groupTitle.orEmpty().lowercase()
         val profile = when {
-            container == Container.AUDIO || group.contains("music audio") -> PlaybackProfile.MUSIC
-            group.contains("music video") || group.contains("mv") -> PlaybackProfile.MUSIC_VIDEO
-            group.contains("short drama") || group.contains("shorts") -> PlaybackProfile.SHORT
+            container == Container.AUDIO || group.contains("music audio") || group.contains("radio") -> PlaybackProfile.MUSIC
+            group.contains("music video") || group.contains("mv") || group.equals("music", true) -> PlaybackProfile.MUSIC_VIDEO
+            group.contains("short drama") || group.contains("shorts") || group.contains("vertical drama") -> PlaybackProfile.SHORT
             hint == MediaKind.LIVE -> PlaybackProfile.LIVE
             hint == MediaKind.MOVIE -> PlaybackProfile.CINEMA
             hint == MediaKind.SERIES -> PlaybackProfile.EPISODE
