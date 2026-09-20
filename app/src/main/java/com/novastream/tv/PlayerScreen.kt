@@ -141,6 +141,13 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     val size = if (video.height > 0) "${video.height}p" else "Auto"
                     val fps = if (video.frameRate > 0) " • ${video.frameRate.toInt()} fps" else ""
                     videoInfo = size + fps
+                    trace = trace.copy(
+                        videoWidth = video.width.coerceAtLeast(0),
+                        videoHeight = video.height.coerceAtLeast(0),
+                        videoBitrate = video.bitrate.coerceAtLeast(0),
+                        videoMimeType = video.sampleMimeType,
+                        videoCodecs = video.codecs
+                    )
                 }
             }
 
@@ -160,6 +167,15 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         val analytics = object : AnalyticsListener {
             override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
                 trace = trace.copy(droppedFrames = trace.droppedFrames + droppedFrames)
+            }
+
+            override fun onBandwidthEstimate(
+                eventTime: AnalyticsListener.EventTime,
+                totalLoadTimeMs: Int,
+                totalBytesLoaded: Long,
+                bitrateEstimate: Long
+            ) {
+                trace = trace.copy(bandwidthEstimateBps = bitrateEstimate.coerceAtLeast(0L))
             }
         }
         player.addListener(listener)
@@ -301,6 +317,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     Text("Stage: " + trace.stage.name, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Position: " + (trace.positionMs / 1000) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Buffered ahead: " + String.format("%.1f", trace.bufferedAheadMs / 1000f) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    if (trace.bandwidthEstimateBps > 0) Text("Bandwidth: " + String.format("%.2f", trace.bandwidthEstimateBps / 1_000_000f) + " Mbps", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    if (trace.videoHeight > 0) Text("Selected: " + trace.videoWidth + "x" + trace.videoHeight + (if (trace.videoBitrate > 0) " • " + String.format("%.2f", trace.videoBitrate / 1_000_000f) + " Mbps" else ""), color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    trace.videoMimeType?.let { Text("MIME: " + it, color = Color.White.copy(alpha=.8f), fontSize = 11.sp) }
+                    trace.videoCodecs?.let { Text("Codec: " + it, color = Color.White.copy(alpha=.8f), fontSize = 11.sp) }
                     Text("Dropped frames: " + trace.droppedFrames, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Recoveries: " + trace.retryCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.lastError?.let { Text("Error: " + it, color = Color(0xFFFFB4AB), fontSize = 11.sp) }
