@@ -42,6 +42,9 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
+import java.io.IOException
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
@@ -55,6 +58,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var message by remember { mutableStateOf("Connecting…") }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
+    var hasPlayedOnce by remember(item.id) { mutableStateOf(false) }
     var showSubtitles by remember { mutableStateOf(false) }
     var showAudioTracks by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -119,7 +123,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     else -> "Connecting…"
                 }
                 trace = trace.copy(health = when (state) {
-                    Player.STATE_BUFFERING -> PlaybackHealth.BUFFERING
+                    Player.STATE_BUFFERING -> {
+                        if (hasPlayedOnce) trace = trace.copy(rebufferCount = trace.rebufferCount + 1)
+                        PlaybackHealth.BUFFERING
+                    }
                     Player.STATE_READY -> if (player.isPlaying) PlaybackHealth.PLAYING else PlaybackHealth.READY
                     Player.STATE_ENDED -> PlaybackHealth.ENDED
                     else -> PlaybackHealth.CONNECTING
@@ -129,7 +136,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
-                if (value) trace = trace.copy(health = PlaybackHealth.PLAYING)
+                if (value) {
+                    hasPlayedOnce = true
+                    trace = trace.copy(health = PlaybackHealth.PLAYING)
+                }
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -176,6 +186,34 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 bitrateEstimate: Long
             ) {
                 trace = trace.copy(bandwidthEstimateBps = bitrateEstimate.coerceAtLeast(0L))
+            }
+
+            override fun onLoadCompleted(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData
+            ) {
+                trace = trace.copy(
+                    completedLoads = trace.completedLoads + 1,
+                    lastLoadBytes = loadEventInfo.bytesLoaded.coerceAtLeast(0L),
+                    lastLoadDurationMs = loadEventInfo.loadDurationMs.coerceAtLeast(0L),
+                    lastLoadError = null
+                )
+            }
+
+            override fun onLoadError(
+                eventTime: AnalyticsListener.EventTime,
+                loadEventInfo: LoadEventInfo,
+                mediaLoadData: MediaLoadData,
+                error: IOException,
+                wasCanceled: Boolean
+            ) {
+                if (!wasCanceled) {
+                    trace = trace.copy(
+                        loadErrorCount = trace.loadErrorCount + 1,
+                        lastLoadError = error.javaClass.simpleName
+                    )
+                }
             }
         }
         player.addListener(listener)
@@ -321,6 +359,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     if (trace.videoHeight > 0) Text("Selected: " + trace.videoWidth + "x" + trace.videoHeight + (if (trace.videoBitrate > 0) " • " + String.format("%.2f", trace.videoBitrate / 1_000_000f) + " Mbps" else ""), color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.videoMimeType?.let { Text("MIME: " + it, color = Color.White.copy(alpha=.8f), fontSize = 11.sp) }
                     trace.videoCodecs?.let { Text("Codec: " + it, color = Color.White.copy(alpha=.8f), fontSize = 11.sp) }
+                    if (trace.completedLoads > 0) Text("Loads: " + trace.completedLoads + " • last " + trace.lastLoadBytes / 1024 + " KB / " + trace.lastLoadDurationMs + " ms", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Rebuffers: " + trace.rebufferCount + " • load errors: " + trace.loadErrorCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    trace.lastLoadError?.let { Text("Last load error: " + it, color = Color(0xFFFFDDB4), fontSize = 11.sp) }
                     Text("Dropped frames: " + trace.droppedFrames, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Recoveries: " + trace.retryCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.lastError?.let { Text("Error: " + it, color = Color(0xFFFFB4AB), fontSize = 11.sp) }
