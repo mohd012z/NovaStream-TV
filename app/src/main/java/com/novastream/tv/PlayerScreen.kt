@@ -361,6 +361,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     trace.videoCodecs?.let { Text("Codec: " + it, color = Color.White.copy(alpha=.8f), fontSize = 11.sp) }
                     if (trace.completedLoads > 0) Text("Loads: " + trace.completedLoads + " • last " + trace.lastLoadBytes / 1024 + " KB / " + trace.lastLoadDurationMs + " ms", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Rebuffers: " + trace.rebufferCount + " • load errors: " + trace.loadErrorCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    val recoveryDecision = RecoveryBrain.decide(trace)
+                    Text("Recovery: " + recoveryDecision.action.name, color = Color(0xFF78F1C7), fontSize = 11.sp)
+                    if (item.kind == MediaKind.SHORT_DRAMA) Text("Preload: " + MediaPreloadManager.state, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.lastLoadError?.let { Text("Last load error: " + it, color = Color(0xFFFFDDB4), fontSize = 11.sp) }
                     Text("Dropped frames: " + trace.droppedFrames, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Recoveries: " + trace.retryCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
