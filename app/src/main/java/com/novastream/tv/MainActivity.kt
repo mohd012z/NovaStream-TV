@@ -259,6 +259,9 @@ private fun HomeScreen(
     val live = remember(playlist) { playlist.filter { it.kind == MediaKind.LIVE || it.kind == MediaKind.UNKNOWN }.take(10) }
     val movies = remember(playlist) { playlist.filter { it.kind == MediaKind.MOVIE }.take(12) }
     val series = remember(playlist) { playlist.filter { it.kind == MediaKind.SERIES }.take(12) }
+    val music = remember(playlist) { playlist.filter { it.kind == MediaKind.MUSIC }.take(12) }
+    val musicVideos = remember(playlist) { playlist.filter { it.kind == MediaKind.MUSIC_VIDEO }.take(12) }
+    val shortDramas = remember(playlist) { playlist.filter { it.kind == MediaKind.SHORT_DRAMA }.take(12) }
     val news = remember(playlist) { playlist.filter { it.groupTitle.orEmpty().contains("news", true) }.take(12) }
     val sports = remember(playlist) { playlist.filter { it.groupTitle.orEmpty().contains("sport", true) }.take(12) }
     val hero = remember(live, movies) { live.firstOrNull() ?: movies.firstOrNull() }
@@ -361,6 +364,11 @@ private fun HomeScreen(
             item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(series, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
         }
 
+        if (shortDramas.isNotEmpty()) {
+            item { SectionHeader("Short Drama", "See all") { navigate(AppPage.SEARCH) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(shortDramas, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
+        }
+
         if (movies.isNotEmpty()) {
             item { SectionHeader("Movies", "See all") { navigate(AppPage.MOVIES) } }
             item {
@@ -368,6 +376,16 @@ private fun HomeScreen(
                     items(movies, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } }
                 }
             }
+        }
+
+        if (musicVideos.isNotEmpty()) {
+            item { SectionHeader("Music Videos", "See all") { navigate(AppPage.SEARCH) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(musicVideos, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
+        }
+
+        if (music.isNotEmpty()) {
+            item { SectionHeader("Music", "See all") { navigate(AppPage.SEARCH) } }
+            item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(music, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
         }
     }
 }
@@ -575,6 +593,9 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
                 "Live" -> item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
                 "Movies" -> item.kind == MediaKind.MOVIE
                 "Series" -> item.kind == MediaKind.SERIES
+                "Music" -> item.kind == MediaKind.MUSIC
+                "Music Video" -> item.kind == MediaKind.MUSIC_VIDEO
+                "Short Drama" -> item.kind == MediaKind.SHORT_DRAMA
                 else -> true
             }
             val yearMatch = year == "All" || inferredYear(item)?.toString() == year
@@ -603,7 +624,7 @@ private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (P
             }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("All", "Live", "Movies", "Series").forEach { value ->
+                    listOf("All", "Live", "Movies", "Series", "Music", "Music Video", "Short Drama").forEach { value ->
                         FilterChip(selected = type == value, onClick = { type = value }, label = { Text(value) })
                     }
                 }
