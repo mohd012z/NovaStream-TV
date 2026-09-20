@@ -40,6 +40,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
@@ -52,6 +53,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     val store = remember { PlaybackStore(context) }
     val prefs = remember { PlayerPreferences(context) }
     var message by remember { mutableStateOf("Connecting…") }
+    var bufferingSinceMs by remember { mutableLongStateOf(0L) }
+    var firstFrameMs by remember { mutableLongStateOf(0L) }
+    val startupStartedMs = remember(item.id) { android.os.SystemClock.elapsedRealtime() }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
     var showSubtitles by remember { mutableStateOf(false) }
@@ -92,6 +96,19 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         }
     }
 
+    // Buffer watchdog: do not let live IPTV sit behind a generic spinner forever.
+    // It reports the stage first; source errors still use the normal retry ladder below.
+    LaunchedEffect(message, bufferingSinceMs) {
+        if (message.startsWith("Buffering") && bufferingSinceMs > 0L) {
+            delay(3_000)
+            if (player.playbackState == Player.STATE_BUFFERING) message = "Buffering • checking stream…"
+            delay(3_000)
+            if (player.playbackState == Player.STATE_BUFFERING) message = "Slow stream • adapting quality…"
+            delay(4_000)
+            if (player.playbackState == Player.STATE_BUFFERING) message = "Stream is taking longer than expected…"
+        }
+    }
+
     LaunchedEffect(player) {
         while (true) {
             currentPositionMs = player.currentPosition.coerceAtLeast(0L)
@@ -109,8 +126,14 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 message = when (state) {
-                    Player.STATE_BUFFERING -> "Buffering…"
-                    Player.STATE_READY -> ""
+                    Player.STATE_BUFFERING -> {
+                        if (bufferingSinceMs == 0L) bufferingSinceMs = android.os.SystemClock.elapsedRealtime()
+                        "Buffering…"
+                    }
+                    Player.STATE_READY -> {
+                        bufferingSinceMs = 0L
+                        ""
+                    }
                     Player.STATE_ENDED -> "Finished"
                     else -> "Connecting…"
                 }
@@ -119,6 +142,13 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
+            }
+
+            override fun onRenderedFirstFrame() {
+                if (firstFrameMs == 0L) {
+                    firstFrameMs = android.os.SystemClock.elapsedRealtime() - startupStartedMs
+                    signalInfo = "Started in " + if (firstFrameMs < 1000) firstFrameMs + " ms" else String.format("%.1f s", firstFrameMs / 1000f)
+                }
             }
 
             override fun onTracksChanged(tracks: Tracks) {
