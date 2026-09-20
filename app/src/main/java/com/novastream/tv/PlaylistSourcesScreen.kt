@@ -54,7 +54,7 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
     var editing by remember { mutableStateOf<PlaylistSource?>(null) }
     var status by remember { mutableStateOf("") }
     var busyId by remember { mutableStateOf<String?>(null) }
-    var addingAll by remember { mutableStateOf(false) }
+    var addingAll by remember { mutableStateOf(false) }\n    var discoverOpen by remember { mutableStateOf(false) }
 
     fun reload() { sources = store.all() }
 
@@ -107,6 +107,30 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
                         }
                     }) { Icon(Icons.Filled.Refresh, "Refresh all", tint = SourceAccent) }
                 }
+            }
+            item {
+                OutlinedButton(onClick = { discoverOpen = !discoverOpen }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Search, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (discoverOpen) "Hide public discovery" else "Discover public M3U playlists")
+                }
+            }
+            if (discoverOpen) item {
+                PublicM3uDiscoveryPanel(
+                    existingUrls = sources.map { PublicM3uDiscoveryEngine.normalizedKey(it.url) }.toSet(),
+                    onAdd = { candidate, validation ->
+                        scope.launch {
+                            status = "Adding " + candidate.name
+                            val result = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(candidate.url) }
+                            val body = result.body.removePrefix("\\uFEFF").trimStart()
+                            if (result.ok && body.startsWith("#EXTM3U", true)) {
+                                store.create(candidate.name, candidate.url, result.body, validation.itemCount)
+                                store.rebuildLibrary(repo); reload(); onLibraryChanged()
+                                status = candidate.name + ": added " + validation.itemCount + " items"
+                            } else status = candidate.name + ": validation changed; scan again"
+                        }
+                    }
+                )
             }
             if (status.isNotBlank()) item { Text(status, color = SourceAccent2, fontSize = 12.sp) }
             if (sources.isEmpty()) item {
@@ -249,4 +273,65 @@ private fun PlaylistUrlDialog(initial: PlaylistSource?, onDismiss: () -> Unit, o
         confirmButton = { Button(enabled = valid, onClick = { onConfirm(name.trim().ifBlank { "Custom playlist" }, url.trim()) }) { Text("Done") } },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+
+@Composable
+private fun PublicM3uDiscoveryPanel(
+    existingUrls: Set<String>,
+    onAdd: (PublicM3uCandidate, PublicM3uValidation) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf(PublicM3uDiscoveryEngine.discover("")) }
+    var validations by remember { mutableStateOf<Map<String, PublicM3uValidation>>(emptyMap()) }
+    var scanning by remember { mutableStateOf<String?>(null) }
+
+    Surface(shape = RoundedCornerShape(20.dp), color = SourcePanel) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text("Public M3U Discovery", fontWeight = FontWeight.Black, fontSize = 19.sp)
+            Text("Search known public/free-to-air catalogs, then verify #EXTM3U before adding.", color = SourceMuted, fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it; results = PublicM3uDiscoveryEngine.discover(it) },
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                placeholder = { Text("Malaysia, ASEAN, Asia, sports...") },
+                singleLine = true
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("ASEAN", "Asia", "Malaysia").forEach { chip ->
+                    AssistChip(onClick = { query = chip; results = PublicM3uDiscoveryEngine.discover(chip) }, label = { Text(chip) })
+                }
+            }
+            results.take(12).forEach { candidate ->
+                val validation = validations[candidate.url]
+                val alreadyAdded = PublicM3uDiscoveryEngine.normalizedKey(candidate.url) in existingUrls
+                Surface(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(14.dp), color = Color(0xFF14202B)) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(candidate.name, fontWeight = FontWeight.SemiBold)
+                        Text(candidate.region + " / " + candidate.provider, color = SourceMuted, fontSize = 11.sp)
+                        Text(candidate.url, color = SourceMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (validation != null) Text(validation.message, color = if (validation.valid) SourceAccent2 else MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                            if (scanning == candidate.url) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            TextButton(enabled = scanning == null, onClick = {
+                                scope.launch {
+                                    scanning = candidate.url
+                                    val checked = withContext(Dispatchers.IO) { PublicM3uDiscoveryEngine.validate(candidate) }
+                                    validations = validations + (candidate.url to checked)
+                                    scanning = null
+                                }
+                            }) { Text("Scan") }
+                            Button(enabled = validation?.valid == true && !alreadyAdded, onClick = { onAdd(candidate, validation!!) }) {
+                                Text(if (alreadyAdded) "Added" else "Add")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
