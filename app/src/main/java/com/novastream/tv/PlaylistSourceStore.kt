@@ -84,8 +84,6 @@ class PlaylistSourceStore(private val context: Context) {
             return
         }
 
-        // Parse each source first and merge by normalized stream URL. This prevents
-        // country/category playlists from multiplying the same channel in the UI.
         val unique = LinkedHashMap<String, PlaylistItem>()
         bodies.forEach { raw ->
             M3uParser.parse(raw).forEach { item ->
@@ -98,11 +96,11 @@ class PlaylistSourceStore(private val context: Context) {
             appendLine("#EXTM3U")
             unique.values.forEach { item ->
                 val attrs = buildList {
-                    item.tvgId?.let { add("tvg-id=\\"" + escapeAttr(it) + "\\"") }
-                    item.tvgName?.let { add("tvg-name=\\"" + escapeAttr(it) + "\\"") }
-                    item.logoUrl?.let { add("tvg-logo=\\"" + escapeAttr(it) + "\\"") }
-                    item.groupTitle?.let { add("group-title=\\"" + escapeAttr(it) + "\\"") }
-                    item.country?.let { add("tvg-country=\\"" + escapeAttr(it) + "\\"") }
+                    item.tvgId?.let { add("tvg-id=" + quoted(it)) }
+                    item.tvgName?.let { add("tvg-name=" + quoted(it)) }
+                    item.logoUrl?.let { add("tvg-logo=" + quoted(it)) }
+                    item.groupTitle?.let { add("group-title=" + quoted(it)) }
+                    item.country?.let { add("tvg-country=" + quoted(it)) }
                 }.joinToString(" ")
                 appendLine("#EXTINF:-1 " + attrs + "," + item.name)
                 item.userAgent?.let { appendLine("#EXTVLCOPT:http-user-agent=" + it) }
@@ -113,7 +111,8 @@ class PlaylistSourceStore(private val context: Context) {
         repo.savePlaylist(merged)
     }
 
-    private fun escapeAttr(value: String): String = value.replace("\\"", "'")
+    private fun quoted(value: String): String =
+        34.toChar().toString() + value.replace(34.toChar(), 39.toChar()) + 34.toChar()
 
     private fun saveList(list: List<PlaylistSource>) {
         val arr = JSONArray()
