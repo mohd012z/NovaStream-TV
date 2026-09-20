@@ -468,6 +468,7 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
     var group by remember { mutableStateOf("All") }
     var country by remember { mutableStateOf("All") }
     var year by remember { mutableStateOf("All") }
+    var quickFilter by remember { mutableStateOf("") }
     val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().sorted().take(40) }
     val countries = remember(items) { listOf("All") + items.mapNotNull { it.country?.takeIf(String::isNotBlank) }.distinct().sorted().take(60) }
     val years = remember(items) {
@@ -475,10 +476,15 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
             item.year ?: Regex("\\b(?:19|20)\\d{2}\\b").find(item.name)?.value?.toIntOrNull()
         }.distinct().sortedDescending().map { it.toString() }
     }
-    val filtered = remember(items, group, country, year) {
+    val filtered = remember(items, group, country, year, quickFilter) {
         items.filter { item ->
+            val quickMatch = quickFilter.isBlank() ||
+                item.name.contains(quickFilter, ignoreCase = true) ||
+                item.groupTitle.orEmpty().contains(quickFilter, ignoreCase = true) ||
+                item.country.orEmpty().contains(quickFilter, ignoreCase = true)
             val itemYear = item.year ?: Regex("\\b(?:19|20)\\d{2}\\b").find(item.name)?.value?.toIntOrNull()
-            (group == "All" || item.groupTitle.orEmpty().equals(group, ignoreCase = true)) &&
+            quickMatch &&
+                (group == "All" || item.groupTitle.orEmpty().equals(group, ignoreCase = true)) &&
                 (country == "All" || item.country.orEmpty().equals(country, ignoreCase = true)) &&
                 (year == "All" || itemYear?.toString() == year)
         }
@@ -513,6 +519,20 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
                 Text("${filtered.size} items", color = Muted)
             }
             item {
+                OutlinedTextField(
+                    value = quickFilter,
+                    onValueChange = { quickFilter = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Filled.FilterList, null, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (quickFilter.isNotBlank()) IconButton(onClick = { quickFilter = "" }) {
+                            Icon(Icons.Filled.Close, "Clear filter", modifier = Modifier.size(18.dp))
+                        }
+                    },
+                    placeholder = { Text("Filter this list while scrolling", fontSize = 12.sp) },
+                    singleLine = true
+                )
+                Spacer(Modifier.height(5.dp))
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -548,6 +568,22 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
             }
         }
         FastScrollbar(listState, filtered.size, Modifier.align(Alignment.CenterEnd))
+        if (filtered.isNotEmpty()) {
+            val scope = rememberCoroutineScope()
+            Column(
+                Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SmallFloatingActionButton(
+                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                    containerColor = Panel2
+                ) { Icon(Icons.Filled.KeyboardArrowUp, "Top", modifier = Modifier.size(18.dp)) }
+                SmallFloatingActionButton(
+                    onClick = { scope.launch { listState.animateScrollToItem(filtered.size + 1) } },
+                    containerColor = Panel2
+                ) { Icon(Icons.Filled.KeyboardArrowDown, "Bottom", modifier = Modifier.size(18.dp)) }
+            }
+        }
     }
 }
 
