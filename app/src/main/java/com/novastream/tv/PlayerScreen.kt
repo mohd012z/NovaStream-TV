@@ -59,6 +59,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var stallRecoveryCount by remember { mutableIntStateOf(0) }
     var lastProgressPositionMs by remember { mutableLongStateOf(0L) }
     var lastProgressAtMs by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+    var lastNetworkSnapshot by remember { mutableStateOf(builtNetworkSnapshotPlaceholder()) }
+    var recoveryQualityStep by remember { mutableIntStateOf(0) }
     val startupStartedMs = remember(item.id) { android.os.SystemClock.elapsedRealtime() }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
@@ -82,6 +84,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     val audioEffects = remember(item.id) { mutableStateOf<AudioEffectsController?>(null) }
 
     val built = remember(item.id) { StreamPlayerFactory.buildAdaptive(context, item) }
+    // Initialize the network baseline after the player exists.
+    if (lastNetworkSnapshot.atMs == 0L) lastNetworkSnapshot = built.networkStats.snapshot()
     val player: ExoPlayer = built.player
     LaunchedEffect(player, item.id) {
         player.setMediaItem(StreamPlayerFactory.mediaItem(item))
@@ -127,6 +131,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             currentPositionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0 } ?: 0L
             val nowMs = android.os.SystemClock.elapsedRealtime()
+            val networkNow = built.networkStats.snapshot()
+            val networkMbps = networkNow.mbpsSince(lastNetworkSnapshot)
+            val networkSilentMs = built.networkStats.ageSinceLastByteMs(nowMs)
+            lastNetworkSnapshot = networkNow
             if (currentPositionMs > lastProgressPositionMs + 250L) {
                 lastProgressPositionMs = currentPositionMs
                 lastProgressAtMs = nowMs
@@ -137,7 +145,20 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 // stall without generating onPlayerError. Re-prepare at the last good point.
                 stallRecoveryCount++
                 val resumeAt = currentPositionMs
-                message = "Playback stalled • recovering…"
+                // If data is still arriving but frames stop advancing, prefer a lower
+                // rendition before re-preparing. If bytes also stopped, this is a source/
+                // network stall and re-prepare is the useful recovery.
+                if (networkSilentMs < 2_500L && recoveryQualityStep < 2) {
+                    recoveryQualityStep++
+                    val maxHeight = if (recoveryQualityStep == 1) 720 else 480
+                    built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                        .setMaxVideoSize(Int.MAX_VALUE, maxHeight)
+                        .setForceHighestSupportedBitrate(false)
+                        .build()
+                    message = "Video stalled • lowering to ${maxHeight}p…"
+                } else {
+                    message = if (networkMbps <= 0.01) "Source stalled • reconnecting…" else "Playback stalled • recovering…"
+                }
                 player.prepare()
                 if (item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN) {
                     player.seekToDefaultPosition()
@@ -672,6 +693,9 @@ private fun PlayerChrome(
         }
     }
 }
+
+private fun builtNetworkSnapshotPlaceholder() =
+    StreamNetworkStats.NetworkSnapshot(0L, 0L, 0L)
 
 private fun formatPlaybackTime(ms: Long): String {
     val totalSeconds = (ms / 1000).coerceAtLeast(0)
