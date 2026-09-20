@@ -107,6 +107,8 @@ class StreamNetworkStats : TransferListener {
         private set
     @Volatile var bytesTransferred: Long = 0L
         private set
+    @Volatile var lastByteMs: Long = 0L
+        private set
     @Volatile var transfersStarted: Int = 0
         private set
 
@@ -134,7 +136,9 @@ class StreamNetworkStats : TransferListener {
         bytesTransferred: Int
     ) {
         if (!isNetwork) return
-        if (firstByteMs == 0L) firstByteMs = android.os.SystemClock.elapsedRealtime()
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (firstByteMs == 0L) firstByteMs = now
+        lastByteMs = now
         this.bytesTransferred += bytesTransferred.toLong()
     }
 
@@ -146,6 +150,23 @@ class StreamNetworkStats : TransferListener {
 
     fun firstByteDelayMs(): Long =
         if (requestStartedMs > 0L && firstByteMs >= requestStartedMs) firstByteMs - requestStartedMs else -1L
+
+    fun ageSinceLastByteMs(nowMs: Long = android.os.SystemClock.elapsedRealtime()): Long =
+        if (lastByteMs > 0L) (nowMs - lastByteMs).coerceAtLeast(0L) else Long.MAX_VALUE
+
+    fun snapshot(): NetworkSnapshot = NetworkSnapshot(
+        atMs = android.os.SystemClock.elapsedRealtime(),
+        totalBytes = bytesTransferred,
+        lastByteMs = lastByteMs
+    )
+
+    data class NetworkSnapshot(val atMs: Long, val totalBytes: Long, val lastByteMs: Long) {
+        fun mbpsSince(previous: NetworkSnapshot): Double {
+            val elapsed = (atMs - previous.atMs).coerceAtLeast(1L)
+            val bytes = (totalBytes - previous.totalBytes).coerceAtLeast(0L)
+            return (bytes * 8.0) / elapsed / 1000.0
+        }
+    }
 }
 
 
