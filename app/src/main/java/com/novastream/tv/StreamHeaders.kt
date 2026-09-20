@@ -7,6 +7,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.TransferListener
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -25,12 +26,13 @@ object StreamPlayerFactory {
         val headers = mutableMapOf<String, String>()
         item.referer?.takeIf { it.isNotBlank() }?.let { headers["Referer"] = it }
         val networkStats = StreamNetworkStats()
+        val bandwidthMeter = DefaultBandwidthMeter.Builder(context).build()
         val http = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers)
             .setConnectTimeoutMs(5_000)
             .setReadTimeoutMs(10_000)
             .setAllowCrossProtocolRedirects(true)
-            .setTransferListener(networkStats)
+            .setTransferListener(CompositeTransferListener(networkStats, bandwidthMeter))
             .apply { item.userAgent?.takeIf { it.isNotBlank() }?.let { setUserAgent(it) } }
 
         val sourceFactory: DataSource.Factory = when (item.kind) {
@@ -48,22 +50,22 @@ object StreamPlayerFactory {
         val loadControl = DefaultLoadControl.Builder().apply {
             when (item.kind) {
                 MediaKind.LIVE, MediaKind.UNKNOWN -> setBufferDurationsMs(
-                    2_000,   // live: avoid building a large delay behind the live edge
-                    12_000,
-                    250,     // first frame quickly
-                    750      // a little more safety after an actual rebuffer
+                    8_000,   // maintain a real live safety reserve after fast startup
+                    24_000,
+                    500,     // still start quickly
+                    2_000    // resume only after rebuilding a useful reserve
                 )
                 MediaKind.SERIES -> setBufferDurationsMs(
-                    5_000,
-                    30_000,
-                    500,
-                    1_500
-                )
-                MediaKind.MOVIE -> setBufferDurationsMs(
-                    10_000,  // long-form VOD: favor stability once playback has begun
+                    15_000,
                     60_000,
                     750,
-                    2_000
+                    3_000
+                )
+                MediaKind.MOVIE -> setBufferDurationsMs(
+                    20_000,  // long-form VOD: build a deeper reservoir once playback starts
+                    90_000,
+                    750,
+                    4_000
                 )
             }
             setPrioritizeTimeOverSizeThresholds(true)
@@ -76,6 +78,7 @@ object StreamPlayerFactory {
             .setTrackSelector(selector)
             .setLoadControl(loadControl)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(sourceFactory))
+            .setBandwidthMeter(bandwidthMeter)
             .build()
         return BuiltPlayer(player, selector, networkStats)
     }
@@ -143,4 +146,18 @@ class StreamNetworkStats : TransferListener {
 
     fun firstByteDelayMs(): Long =
         if (requestStartedMs > 0L && firstByteMs >= requestStartedMs) firstByteMs - requestStartedMs else -1L
+}
+
+
+private class CompositeTransferListener(
+    private vararg val delegates: TransferListener
+) : TransferListener {
+    override fun onTransferInitializing(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) =
+        delegates.forEach { it.onTransferInitializing(source, dataSpec, isNetwork) }
+    override fun onTransferStart(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) =
+        delegates.forEach { it.onTransferStart(source, dataSpec, isNetwork) }
+    override fun onBytesTransferred(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean, bytesTransferred: Int) =
+        delegates.forEach { it.onBytesTransferred(source, dataSpec, isNetwork, bytesTransferred) }
+    override fun onTransferEnd(source: androidx.media3.datasource.DataSource, dataSpec: androidx.media3.datasource.DataSpec, isNetwork: Boolean) =
+        delegates.forEach { it.onTransferEnd(source, dataSpec, isNetwork) }
 }
