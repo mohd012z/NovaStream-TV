@@ -10,12 +10,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,57 +84,66 @@ fun ShortDramaFeedScreen(playlist: List<PlaylistItem>, onBack: () -> Unit) {
         ) { Icon(Icons.Filled.ArrowBack, "Back", tint = Color.White) }
     }
 
-    if (showAppearance) {
-        ShortAppearanceDialog(
-            titleSize = titleSize,
-            infoSize = infoSize,
-            onTitleSize = { titleSize = it.coerceIn(10f, 72f) },
-            onInfoSize = { infoSize = it.coerceIn(10f, 72f) },
-            onDismiss = { showAppearance = false }
-        )
-    }
 }
 
 @Composable
 private fun ShortAppearanceDialog(
-    titleSize: Float,
-    infoSize: Float,
-    onTitleSize: (Float) -> Unit,
-    onInfoSize: (Float) -> Unit,
+    value: ShortAppearance,
+    onChange: (ShortAppearance) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var fontMenu by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Shorts text size") },
+        title = { Text("Shorts appearance") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Title: ${titleSize.toInt()} sp")
+                Text("Title: ${value.titleSizeSp.toInt()} sp")
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { onTitleSize(titleSize - 1f) }) { Text("−") }
-                    Slider(
-                        value = titleSize,
-                        onValueChange = onTitleSize,
-                        valueRange = 10f..72f,
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                    )
-                    OutlinedButton(onClick = { onTitleSize(titleSize + 1f) }) { Text("+") }
+                    OutlinedButton(onClick = { onChange(value.copy(titleSizeSp = (value.titleSizeSp - 1f).coerceAtLeast(10f))) }) { Text("−") }
+                    Slider(value = value.titleSizeSp, onValueChange = { onChange(value.copy(titleSizeSp = it)) }, valueRange = 10f..72f, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                    OutlinedButton(onClick = { onChange(value.copy(titleSizeSp = (value.titleSizeSp + 1f).coerceAtMost(72f))) }) { Text("+") }
                 }
-                Text("Episode/info: ${infoSize.toInt()} sp")
+                Text("Episode/info: ${value.infoSizeSp.toInt()} sp")
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = { onInfoSize(infoSize - 1f) }) { Text("−") }
-                    Slider(
-                        value = infoSize,
-                        onValueChange = onInfoSize,
-                        valueRange = 10f..72f,
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                    )
-                    OutlinedButton(onClick = { onInfoSize(infoSize + 1f) }) { Text("+") }
+                    OutlinedButton(onClick = { onChange(value.copy(infoSizeSp = (value.infoSizeSp - 1f).coerceAtLeast(10f))) }) { Text("−") }
+                    Slider(value = value.infoSizeSp, onValueChange = { onChange(value.copy(infoSizeSp = it)) }, valueRange = 10f..72f, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
+                    OutlinedButton(onClick = { onChange(value.copy(infoSizeSp = (value.infoSizeSp + 1f).coerceAtMost(72f))) }) { Text("+") }
                 }
-                Text("10–72 sp • live preview on the current Short", fontSize = 11.sp, color = Color.Gray)
+                Box {
+                    OutlinedButton(onClick = { fontMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Font: " + value.fontFamily.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() })
+                    }
+                    DropdownMenu(expanded = fontMenu, onDismissRequest = { fontMenu = false }) {
+                        ShortFontFamily.entries.forEach { family ->
+                            DropdownMenuItem(
+                                text = { Text(family.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }) },
+                                onClick = { fontMenu = false; onChange(value.copy(fontFamily = family)) }
+                            )
+                        }
+                    }
+                }
+                Text("Text color")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0xFFFFFFFF, 0xFFFFEB3B, 0xFF80DEEA, 0xFFA5D6A7).forEach { argb ->
+                        Box(
+                            Modifier.size(34.dp)
+                                .background(Color(argb.toULong()), CircleShape)
+                                .clickable { onChange(value.copy(textColorArgb = argb)) }
+                        )
+                    }
+                }
+                Text("Changes are saved automatically • 10–72 sp", fontSize = 11.sp, color = Color.Gray)
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
+}
+
+private fun shortFontFamily(value: ShortFontFamily): FontFamily = when (value) {
+    ShortFontFamily.SYSTEM, ShortFontFamily.SANS_SERIF -> FontFamily.SansSerif
+    ShortFontFamily.SERIF -> FontFamily.Serif
+    ShortFontFamily.MONOSPACE -> FontFamily.Monospace
 }
 
 private fun buildShortDramaQueue(playlist: List<PlaylistItem>): List<PlaylistItem> {
@@ -155,8 +164,8 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
     var bufferingSinceMs by remember(item.id) { mutableLongStateOf(0L) }
     var showRecovery by remember(item.id) { mutableStateOf(false) }
     var showAppearance by remember(item.id) { mutableStateOf(false) }
-    var titleSize by remember(item.id) { mutableFloatStateOf(20f) }
-    var infoSize by remember(item.id) { mutableFloatStateOf(13f) }
+    val appearancePrefs = remember { ShortAppearancePreferences(context) }
+    var appearance by remember { mutableStateOf(appearancePrefs.load()) }
     val store = remember { PlaybackStore(context) }
     val player = remember(item.id) { StreamPlayerFactory.build(context, item) }
 
@@ -304,14 +313,20 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
         ) {
             Text(
                 item.showName?.takeIf { it.isNotBlank() } ?: item.name,
-                color = Color.White,
+                color = Color(appearance.textColorArgb.toULong()),
+                fontFamily = shortFontFamily(appearance.fontFamily),
                 fontWeight = FontWeight.Black,
-                fontSize = titleSize.sp,
+                fontSize = appearance.titleSizeSp.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
             item.episodeNumber?.let {
-                Text("Episode $it", color = ShortsAccent, fontSize = infoSize.sp)
+                Text(
+                    "Episode $it",
+                    color = Color(appearance.infoColorArgb.toULong()),
+                    fontFamily = shortFontFamily(appearance.fontFamily),
+                    fontSize = appearance.infoSizeSp.sp
+                )
             }
         }
 
@@ -351,5 +366,16 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
                 Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play or pause", tint = Color.White)
             }
         }
+    }
+
+    if (showAppearance) {
+        ShortAppearanceDialog(
+            value = appearance,
+            onChange = {
+                appearance = it
+                appearancePrefs.save(it)
+            },
+            onDismiss = { showAppearance = false }
+        )
     }
 }
