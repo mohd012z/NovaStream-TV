@@ -301,6 +301,43 @@ private fun HomeScreen(
     val sports = remember(playlist) { playlist.filter { it.groupTitle.orEmpty().contains("sport", true) }.take(12) }
     val hero = remember(live, movies) { live.firstOrNull() ?: movies.firstOrNull() }
 
+    // "Recommended for you": a simple local heuristic built from watch history
+    // (no server-side profile exists). We look at the genre/group and country
+    // of recently watched items and surface other library items that share
+    // either signal, excluding anything already in history. With no watch
+    // history yet (new user) we fall back to a reasonable default ordering
+    // (highest content rating, then most recently added) so the rail is
+    // never empty on first launch.
+    val watchHistory = remember(playlist) {
+        PlaybackStore(activity).recent(20).mapNotNull { record -> playlist.firstOrNull { it.id == record.id } }
+    }
+    val recommended = remember(playlist, watchHistory) {
+        val historyIds = watchHistory.map { it.id }.toSet()
+        val genreSignals = watchHistory.mapNotNull { it.genre?.takeIf(String::isNotBlank) ?: it.groupTitle?.takeIf(String::isNotBlank) }.toSet()
+        val countrySignals = watchHistory.mapNotNull { it.country?.takeIf(String::isNotBlank) }.toSet()
+        val bySignal = if (genreSignals.isNotEmpty() || countrySignals.isNotEmpty()) {
+            playlist.filter { candidate ->
+                candidate.id !in historyIds && (
+                    genreSignals.contains(candidate.genre.orEmpty()) ||
+                        genreSignals.contains(candidate.groupTitle.orEmpty()) ||
+                        countrySignals.contains(candidate.country.orEmpty())
+                    )
+            }
+        } else emptyList()
+        (if (bySignal.isNotEmpty()) bySignal else playlist.filter { it.id !in historyIds })
+            .sortedWith(compareByDescending<PlaylistItem> { it.contentRating.ordinal }.thenByDescending { it.year ?: 0 })
+            .take(20)
+    }
+
+    // "New Dramas": Series/Short Drama shows approximated as "recently added"
+    // by their position in the parsed playlist, since M3U sources carry no
+    // real added-at timestamp. takeLast() approximates newest-appended.
+    val newDramaShows = remember(playlist) {
+        groupItemsByShow(playlist.filter { it.kind == MediaKind.SHORT_DRAMA || it.kind == MediaKind.SERIES })
+            .takeLast(12)
+            .reversed()
+    }
+
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(18.dp, 18.dp, 18.dp, 28.dp),
@@ -357,6 +394,15 @@ private fun HomeScreen(
             }
         }
 
+        if (recommended.isNotEmpty()) {
+            item { SectionHeader("Recommended for you", "See all") { navigate(AppPage.SEARCH) } }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(recommended, key = { it.id }) { item -> PosterChannelCard(item, epgIndex.now(item.tvgId)) { play(item) } }
+                }
+            }
+        }
+
         if (live.isNotEmpty()) {
             item { SectionHeader("Live now", "See all") { navigate(AppPage.LIVE) } }
             item {
@@ -402,6 +448,15 @@ private fun HomeScreen(
         if (shortDramas.isNotEmpty()) {
             item { SectionHeader("Short Drama", "See all") { navigate(AppPage.SEARCH) } }
             item { LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(shortDramas, key = { it.id }) { item -> PosterChannelCard(item, null) { play(item) } } } }
+        }
+
+        if (newDramaShows.isNotEmpty()) {
+            item { SectionHeader("New Dramas", "See all") { navigate(AppPage.SEARCH) } }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(newDramaShows, key = { it.name }) { g -> ShowPosterCard(g) { g.items.firstOrNull()?.let(play) } }
+                }
+            }
         }
 
         if (movies.isNotEmpty()) {
@@ -502,6 +557,30 @@ private fun PosterChannelCard(item: PlaylistItem, now: EpgProgramme?, onClick: (
             Column(Modifier.padding(10.dp)) {
                 Text(item.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(now?.title ?: item.groupTitle.orEmpty(), color = if (now != null) Accent2 else Muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShowPosterCard(group: ShowGroup, onClick: () -> Unit) {
+    val coverLogo = group.items.firstOrNull { !it.logoUrl.isNullOrBlank() }?.logoUrl
+    Surface(
+        Modifier.width(150.dp).height(176.dp).shadow(10.dp, RoundedCornerShape(22.dp)).clickable(onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        color = Panel2
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(100.dp).background(Color(0xFF0E1620)), contentAlignment = Alignment.Center) {
+                if (!coverLogo.isNullOrBlank()) {
+                    AsyncImage(model = coverLogo, contentDescription = group.name, modifier = Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit)
+                } else {
+                    Text(group.name.take(3).uppercase(), fontWeight = FontWeight.Black, color = Accent, fontSize = 22.sp)
+                }
+            }
+            Column(Modifier.padding(10.dp)) {
+                Text(group.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${group.items.size} episode${if (group.items.size == 1) "" else "s"}", color = Muted, fontSize = 11.sp)
             }
         }
     }
