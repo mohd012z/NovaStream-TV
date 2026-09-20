@@ -2,6 +2,7 @@ package com.novastream.tv
 
 import android.content.Context
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -71,5 +72,19 @@ object StreamPlayerFactory {
 
     fun build(context: Context, item: PlaylistItem): ExoPlayer = buildAdaptive(context, item).player
 
-    fun mediaItem(item: PlaylistItem): MediaItem = MediaItem.fromUri(item.streamUrl)
+    fun mediaItem(item: PlaylistItem): MediaItem {
+        val url = item.streamUrl.trim()
+        val path = url.substringBefore('?').substringBefore('#').lowercase()
+        val mimeType = when {
+            path.endsWith(".m3u8") -> MimeTypes.APPLICATION_M3U8
+            path.endsWith(".mpd") -> MimeTypes.APPLICATION_MPD
+            path.endsWith(".mp4") || path.endsWith(".m4v") -> MimeTypes.VIDEO_MP4
+            path.endsWith(".webm") -> MimeTypes.VIDEO_WEBM
+            else -> null
+        }
+
+        val builder = MediaItem.Builder().setUri(url)
+        if (mimeType != null) builder.setMimeType(mimeType)
+        return builder.build()
+    }
 }
