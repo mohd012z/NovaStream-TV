@@ -35,7 +35,8 @@ object MediaPreloadManager {
             state = "PRELOADING"
             try {
                 val spec = DataSpec.Builder().setUri(uri).setPosition(0).setLength(length).setKey(item.id).build()
-                CacheWriter(factory.createDataSource(), spec, null, null).cache()
+                val cacheDataSource = factory.createDataSource() as androidx.media3.datasource.cache.CacheDataSource
+                CacheWriter(cacheDataSource, spec, null, null).cache()
                 state = "READY"
             } catch (_: InterruptedException) {
                 state = "CANCELLED"
