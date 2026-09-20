@@ -466,11 +466,25 @@ private fun PosterChannelCard(item: PlaylistItem, now: EpgProgramme?, onClick: (
 @Composable
 private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
     var group by remember { mutableStateOf("All") }
-    var rating by remember { mutableStateOf("All") }
-    val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().take(20) }
-    val filtered = remember(items, group) { if (group == "All") items else items.filter { it.groupTitle == group } }
+    var country by remember { mutableStateOf("All") }
+    var year by remember { mutableStateOf("All") }
+    val groups = remember(items) { listOf("All") + items.mapNotNull { it.groupTitle?.takeIf(String::isNotBlank) }.distinct().sorted().take(40) }
+    val countries = remember(items) { listOf("All") + items.mapNotNull { it.country?.takeIf(String::isNotBlank) }.distinct().sorted().take(60) }
+    val years = remember(items) {
+        listOf("All") + items.mapNotNull { item ->
+            item.year ?: Regex("\\b(?:19|20)\\d{2}\\b").find(item.name)?.value?.toIntOrNull()
+        }.distinct().sortedDescending().map { it.toString() }
+    }
+    val filtered = remember(items, group, country, year) {
+        items.filter { item ->
+            val itemYear = item.year ?: Regex("\\b(?:19|20)\\d{2}\\b").find(item.name)?.value?.toIntOrNull()
+            (group == "All" || item.groupTitle.orEmpty().equals(group, ignoreCase = true)) &&
+                (country == "All" || item.country.orEmpty().equals(country, ignoreCase = true)) &&
+                (year == "All" || itemYear?.toString() == year)
+        }
+    }
     val browseContext = LocalContext.current\n    val browseState = remember(browseContext) { BrowseStateStore(browseContext) }
-    val browseKey = remember(title, group) { "library_" + title + "_" + group }
+    val browseKey = remember(title, group, country, year) { "library_" + title + "_" + group + "_" + country + "_" + year }
     val initialBrowsePosition = remember(browseKey) { browseState.position(browseKey) }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = initialBrowsePosition.index,
@@ -498,9 +512,24 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
                 Text("${filtered.size} items", color = Muted)
             }
             item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    groups.forEach { g ->
-                        FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g, maxLines = 1) })
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Country", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                        countries.forEach { value ->
+                            FilterChip(selected = country == value, onClick = { country = value }, label = { Text(value, maxLines = 1, fontSize = 11.sp) })
+                        }
+                    }
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Year", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                        years.forEach { value ->
+                            FilterChip(selected = year == value, onClick = { year = value }, label = { Text(value, maxLines = 1, fontSize = 11.sp) })
+                        }
+                    }
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Group", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+                        groups.forEach { value ->
+                            FilterChip(selected = group == value, onClick = { group = value }, label = { Text(value, maxLines = 1, fontSize = 11.sp) })
+                        }
                     }
                 }
             }
