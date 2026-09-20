@@ -761,7 +761,7 @@ private fun SettingsScreen(
         item {
             Button(onClick = {
                 scope.launch {
-                    status = "Loading PerfectTV Free playlist…"
+                    status = "Loading NovaStreamerTV Free playlist…"
                     val m3u = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(RemoteSourceLoader.PERFECTTV_FREE_M3U) }
                     if (!m3u.ok) status = "Playlist failed: ${m3u.message}" else {
                         withContext(Dispatchers.IO) { repo.savePlaylist(m3u.body) }
@@ -769,12 +769,12 @@ private fun SettingsScreen(
                         onLibraryChanged()
                     }
                 }
-            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Filled.CloudDownload, null); Spacer(Modifier.width(8.dp)); Text("Load PerfectTV Free M3U") }
+            }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Filled.CloudDownload, null); Spacer(Modifier.width(8.dp)); Text("Load NovaStreamerTV Free M3U") }
         }
         item {
             OutlinedButton(onClick = {
                 scope.launch {
-                    status = "Loading PerfectTV EPG…"
+                    status = "Loading NovaStreamerTV EPG…"
                     val xml = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(RemoteSourceLoader.PERFECTTV_FREE_EPG) }
                     if (!xml.ok) status = "EPG failed: ${xml.message}" else {
                         withContext(Dispatchers.IO) { repo.saveEpg(xml.body) }
