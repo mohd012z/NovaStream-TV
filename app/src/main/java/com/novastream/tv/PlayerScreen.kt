@@ -158,7 +158,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 if (firstFrameMs == 0L) {
                     firstFrameMs = android.os.SystemClock.elapsedRealtime() - startupStartedMs
                     val firstByte = built.networkStats.firstByteDelayMs()
-                    val start = if (firstFrameMs < 1000) firstFrameMs + " ms" else String.format("%.1f s", firstFrameMs / 1000f)
+                    val start = if (firstFrameMs < 1000) "${firstFrameMs} ms" else String.format("%.1f s", firstFrameMs / 1000f)
                     signalInfo = if (firstByte >= 0) "Start $start • first data ${firstByte}ms" else "Started in $start"
                 }
             }
