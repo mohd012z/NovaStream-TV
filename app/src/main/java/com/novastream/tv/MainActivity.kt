@@ -198,7 +198,7 @@ private fun BrandSplash() {
 
 @Composable
 private fun BottomBar(current: AppPage, onSelect: (AppPage) -> Unit) {
-    NavigationBar(containerColor = Color(0xFF0D1118), tonalElevation = 10.dp) {
+    NavigationBar(modifier = Modifier.height(64.dp), containerColor = Color(0xFF0D1118), tonalElevation = 6.dp) {
         listOf(
             Triple(AppPage.HOME, "Home", Icons.Filled.Home),
             Triple(AppPage.LIVE, "Live", Icons.Filled.LiveTv),
@@ -211,8 +211,8 @@ private fun BottomBar(current: AppPage, onSelect: (AppPage) -> Unit) {
             NavigationBarItem(
                 selected = current == page,
                 onClick = { onSelect(page) },
-                icon = { Icon(icon, label) },
-                label = { Text(label, maxLines = 1, fontSize = 10.sp) },
+                icon = { Icon(icon, label, modifier = Modifier.size(20.dp)) },
+                label = { Text(label, maxLines = 1, fontSize = 8.sp) },
                 colors = NavigationBarItemDefaults.colors(indicatorColor = Accent.copy(alpha = .22f))
             )
         }
@@ -394,16 +394,16 @@ private fun BrandMark(size: androidx.compose.ui.unit.Dp) {
 @Composable
 private fun QuickAction(label: String, icon: ImageVector, onClick: () -> Unit) {
     Surface(
-        Modifier.width(84.dp).clickable(onClick = onClick),
+        Modifier.width(76.dp).clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = Panel2
     ) {
-        Column(Modifier.padding(vertical = 14.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(36.dp).clip(CircleShape).background(Accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+        Column(Modifier.padding(vertical = 10.dp, horizontal = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(32.dp).clip(CircleShape).background(Accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
                 Icon(icon, null, tint = Accent)
             }
             Spacer(Modifier.height(6.dp))
-            Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -430,7 +430,7 @@ private fun FeatureCard(title: String, subtitle: String, icon: ImageVector, modi
 @Composable
 private fun SectionHeader(title: String, action: String, onAction: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 19.sp, modifier = Modifier.weight(1f))
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
         TextButton(onClick = onAction) { Text(action, color = Accent) }
     }
 }
@@ -494,7 +494,7 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Text(title, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text(title, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text("${filtered.size} items", color = Muted)
             }
             item {
@@ -521,7 +521,7 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
 private fun ChannelRow(item: PlaylistItem, now: EpgProgramme?, progress: Float, onClick: () -> Unit) {
     GlassRow(onClick = onClick) {
         Box(
-            Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF0A111A)),
+            Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF0A111A)),
             contentAlignment = Alignment.Center
         ) {
             if (!item.logoUrl.isNullOrBlank()) {
@@ -533,7 +533,7 @@ private fun ChannelRow(item: PlaylistItem, now: EpgProgramme?, progress: Float, 
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(item.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Icon(Icons.Filled.PlayArrow, null, tint = Accent, modifier = Modifier.size(20.dp))
             }
             Text(item.groupTitle.orEmpty().ifBlank { "TV" }, color = Muted, fontSize = 11.sp, maxLines = 1)
@@ -553,7 +553,7 @@ private fun GlassRow(onClick: () -> Unit, content: @Composable RowScope.() -> Un
         Modifier.fillMaxWidth().shadow(8.dp, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))
             .background(Brush.linearGradient(listOf(Panel2, Panel)))
             .border(1.dp, Color.White.copy(alpha = .07f), RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick).padding(14.dp),
+            .clickable(onClick = onClick).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )
