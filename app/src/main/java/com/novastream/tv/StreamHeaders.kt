@@ -23,6 +23,8 @@ object StreamPlayerFactory {
     )
 
     fun buildAdaptive(context: Context, item: PlaylistItem): BuiltPlayer {
+        val descriptor = NovaStreamLibrary.describe(item.streamUrl, item.kind, item.groupTitle)
+        val policy = NovaStreamLibrary.bufferPolicy(descriptor.profile)
         val headers = mutableMapOf<String, String>()
         item.referer?.takeIf { it.isNotBlank() }?.let { headers["Referer"] = it }
         val networkStats = StreamNetworkStats()
@@ -48,28 +50,14 @@ object StreamPlayerFactory {
                 .build()
         }
         val loadControl = DefaultLoadControl.Builder().apply {
-            when (item.kind) {
-                MediaKind.LIVE, MediaKind.UNKNOWN -> setBufferDurationsMs(
-                    8_000,   // maintain a real live safety reserve after fast startup
-                    24_000,
-                    500,     // still start quickly
-                    2_000    // resume only after rebuilding a useful reserve
-                )
-                MediaKind.SERIES -> setBufferDurationsMs(
-                    15_000,
-                    60_000,
-                    750,
-                    3_000
-                )
-                MediaKind.MOVIE -> setBufferDurationsMs(
-                    20_000,  // long-form VOD: build a deeper reservoir once playback starts
-                    90_000,
-                    750,
-                    4_000
-                )
-            }
+            setBufferDurationsMs(
+                policy.minMs,
+                policy.maxMs,
+                policy.playbackMs,
+                policy.rebufferMs
+            )
             setPrioritizeTimeOverSizeThresholds(true)
-            setBackBuffer(if (item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN) 3_000 else 15_000, true)
+            setBackBuffer(policy.backBufferMs, true)
         }.build()
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
@@ -86,12 +74,8 @@ object StreamPlayerFactory {
     fun build(context: Context, item: PlaylistItem): ExoPlayer = buildAdaptive(context, item).player
 
     fun mediaItem(item: PlaylistItem): MediaItem {
-        val clean = item.streamUrl.substringBefore('?').lowercase()
-        val mime = when {
-            clean.endsWith(".m3u8") || clean.endsWith(".m3u") -> MimeTypes.APPLICATION_M3U8
-            clean.endsWith(".mpd") -> MimeTypes.APPLICATION_MPD
-            else -> null
-        }
+        val descriptor = NovaStreamLibrary.describe(item.streamUrl, item.kind, item.groupTitle)
+        val mime = descriptor.mimeType
         return MediaItem.Builder()
             .setUri(item.streamUrl)
             .apply { if (mime != null) setMimeType(mime) }
