@@ -54,7 +54,8 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
     var editing by remember { mutableStateOf<PlaylistSource?>(null) }
     var status by remember { mutableStateOf("") }
     var busyId by remember { mutableStateOf<String?>(null) }
-    var addingAll by remember { mutableStateOf(false) }\n    var discoverOpen by remember { mutableStateOf(false) }
+    var addingAll by remember { mutableStateOf(false) }
+    var discoverOpen by remember { mutableStateOf(false) }
 
     fun reload() { sources = store.all() }
 
@@ -122,7 +123,7 @@ fun PlaylistSourcesScreen(repo: LibraryRepository, onLibraryChanged: () -> Unit)
                         scope.launch {
                             status = "Adding " + candidate.name
                             val result = withContext(Dispatchers.IO) { RemoteSourceLoader.fetch(candidate.url) }
-                            val body = result.body.removePrefix("\\uFEFF").trimStart()
+                            val body = result.body.removePrefix("\uFEFF").trimStart()
                             if (result.ok && body.startsWith("#EXTM3U", true)) {
                                 store.create(candidate.name, candidate.url, result.body, validation.itemCount)
                                 store.rebuildLibrary(repo); reload(); onLibraryChanged()
