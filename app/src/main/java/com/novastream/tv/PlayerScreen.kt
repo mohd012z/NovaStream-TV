@@ -59,6 +59,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
     var hasPlayedOnce by remember(item.id) { mutableStateOf(false) }
+    var lastRecoveryAtMs by remember(item.id) { mutableLongStateOf(0L) }
+    var lastProgressPositionMs by remember(item.id) { mutableLongStateOf(0L) }
+    var lastProgressAtMs by remember(item.id) { mutableLongStateOf(System.currentTimeMillis()) }
     var showSubtitles by remember { mutableStateOf(false) }
     var showAudioTracks by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -104,6 +107,29 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             currentPositionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0 } ?: 0L
             trace = trace.copy(positionMs = currentPositionMs, bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L), durationMs = durationMs, retryCount = retryCount)
+            val now = System.currentTimeMillis()
+            if (currentPositionMs > lastProgressPositionMs + 250L) {
+                lastProgressPositionMs = currentPositionMs
+                lastProgressAtMs = now
+            }
+            val silentStall = player.playWhenReady && player.playbackState == Player.STATE_READY &&
+                !player.isPlaying && now - lastProgressAtMs >= 8_000L
+            val decision = RecoveryBrain.decide(trace)
+            val shouldRecover = silentStall || (trace.health == PlaybackHealth.BUFFERING &&
+                trace.bufferedAheadMs < 1_000L && decision.action == RecoveryAction.RESTART_PIPELINE)
+            if (prefs.autoRetry && shouldRecover && retryCount < 3 && now - lastRecoveryAtMs >= 6_000L) {
+                val resumeAt = player.currentPosition.coerceAtLeast(0L)
+                retryCount++
+                lastRecoveryAtMs = now
+                trace = trace.copy(health = PlaybackHealth.RECOVERING, retryCount = retryCount)
+                message = "Recovering $retryCount/3…"
+                player.stop()
+                player.setMediaItem(StreamPlayerFactory.mediaItem(item))
+                player.prepare()
+                if (item.kind != MediaKind.LIVE && resumeAt > 0L) player.seekTo(resumeAt)
+                player.playWhenReady = true
+                lastProgressAtMs = now
+            }
             if (audioEffects.value == null && player.audioSessionId != 0) {
                 val controller = runCatching { AudioEffectsController(player.audioSessionId) }.getOrNull()
                 controller?.apply(audioPreset)
