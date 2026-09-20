@@ -483,7 +483,8 @@ private fun MediaLibraryScreen(title: String, items: List<PlaylistItem>, epgInde
                 (year == "All" || itemYear?.toString() == year)
         }
     }
-    val browseContext = LocalContext.current\n    val browseState = remember(browseContext) { BrowseStateStore(browseContext) }
+    val browseContext = LocalContext.current
+    val browseState = remember(browseContext) { BrowseStateStore(browseContext) }
     val browseKey = remember(title, group, country, year) { "library_" + title + "_" + group + "_" + country + "_" + year }
     val initialBrowsePosition = remember(browseKey) { browseState.position(browseKey) }
     val listState = rememberLazyListState(
@@ -617,7 +618,8 @@ private fun GlassRow(onClick: () -> Unit, content: @Composable RowScope.() -> Un
 
 @Composable
 private fun SearchScreen(items: List<PlaylistItem>, epgIndex: EpgIndex, play: (PlaylistItem) -> Unit) {
-    val browseContext = LocalContext.current\n    val browseState = remember(browseContext) { BrowseStateStore(browseContext) }
+    val browseContext = LocalContext.current
+    val browseState = remember(browseContext) { BrowseStateStore(browseContext) }
     var query by remember { mutableStateOf(browseState.searchQuery) }
     var type by remember { mutableStateOf(browseState.filter("type")) }
     var year by remember { mutableStateOf(browseState.filter("year")) }
