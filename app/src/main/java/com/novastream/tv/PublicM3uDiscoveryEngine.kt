@@ -7,6 +7,12 @@ data class PublicM3uValidation(val candidate: PublicM3uCandidate, val valid: Boo
 
 object PublicM3uDiscoveryEngine {
     private const val IPTV_ORG = "https://iptv-org.github.io/iptv"
+
+    private val regions = linkedMapOf(
+        "Asia" to "asia", "Asia-Pacific" to "apac", "ASEAN" to "asean",
+        "Southeast Asia" to "sea", "East Asia" to "eas", "South Asia" to "sas",
+        "Central Asia" to "cas", "West Asia" to "was", "Worldwide" to "ww"
+    )
     private val asianCountries = linkedMapOf(
         "Malaysia" to "my", "Singapore" to "sg", "Indonesia" to "id", "Thailand" to "th",
         "Philippines" to "ph", "Vietnam" to "vn", "Brunei" to "bn", "Cambodia" to "kh",
@@ -14,19 +20,25 @@ object PublicM3uDiscoveryEngine {
         "India" to "in", "Pakistan" to "pk", "Bangladesh" to "bd", "Sri Lanka" to "lk",
         "Nepal" to "np", "Mongolia" to "mn"
     )
+    private val categories = listOf("news", "sports", "family", "movies", "music", "documentary")
 
     fun discover(query: String): List<PublicM3uCandidate> {
         val q = query.trim().lowercase()
-        val world = PublicM3uCandidate("Worldwide public channels", IPTV_ORG + "/index.m3u", "World", "iptv-org")
-        val asia = asianCountries.map { (name, code) ->
+        val regional = regions.map { (name, code) ->
+            PublicM3uCandidate(name + " public channels", IPTV_ORG + "/regions/" + code + ".m3u", name, "iptv-org")
+        }
+        val countries = asianCountries.map { (name, code) ->
             PublicM3uCandidate(name + " public channels", IPTV_ORG + "/countries/" + code + ".m3u", "Asia", "iptv-org")
         }
-        val categories = listOf("news", "sports", "family", "movies", "music", "documentary").map {
+        val grouped = categories.map {
             PublicM3uCandidate(it.replaceFirstChar(Char::uppercase) + " public channels", IPTV_ORG + "/categories/" + it + ".m3u", "World", "iptv-org")
         }
-        val all = listOf(world) + asia + categories
+        val all = regional + countries + grouped
         if (q.isBlank() || q == "all") return all
-        return all.filter { it.name.lowercase().contains(q) || it.region.lowercase().contains(q) || it.provider.lowercase().contains(q) || it.url.lowercase().contains(q) }
+        return all.filter {
+            it.name.lowercase().contains(q) || it.region.lowercase().contains(q) ||
+                it.provider.lowercase().contains(q) || it.url.lowercase().contains(q)
+        }
     }
 
     fun validate(candidate: PublicM3uCandidate): PublicM3uValidation {
