@@ -48,7 +48,8 @@ fun ShortDramaFeedScreen(
     var countdownPage by remember { mutableIntStateOf(-1) }
     var countdown by remember { mutableIntStateOf(0) }
     var completedItem by remember { mutableStateOf<PlaylistItem?>(null) }
-    val playbackStore = remember { PlaybackStore(LocalContext.current) }
+    val context = LocalContext.current
+    val playbackStore = remember(context) { PlaybackStore(context) }
     val continueWatching = remember(completedItem) {
         playbackStore.recent(8).mapNotNull { record ->
             playlist.firstOrNull { it.id == record.id && it.kind != MediaKind.SHORT_DRAMA && it.kind != MediaKind.LIVE }
