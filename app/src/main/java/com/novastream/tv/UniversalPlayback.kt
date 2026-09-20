@@ -68,6 +68,46 @@ enum class PlaybackHealth {
     CONNECTING, BUFFERING, READY, PLAYING, ENDED, RECOVERING, ERROR
 }
 
+enum class PlaybackTraceStage {
+    SOURCE, NETWORK, MANIFEST, BUFFER, DECODER, RENDER, RECOVERY
+}
+
+data class PlaybackTraceSnapshot(
+    val health: PlaybackHealth = PlaybackHealth.CONNECTING,
+    val sourceHost: String = "",
+    val protocol: String = "AUTO",
+    val positionMs: Long = 0L,
+    val bufferedPositionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val retryCount: Int = 0,
+    val droppedFrames: Int = 0,
+    val lastError: String? = null
+) {
+    val bufferedAheadMs: Long
+        get() = (bufferedPositionMs - positionMs).coerceAtLeast(0L)
+
+    val stage: PlaybackTraceStage
+        get() = when {
+            health == PlaybackHealth.ERROR -> PlaybackTraceStage.RECOVERY
+            health == PlaybackHealth.RECOVERING -> PlaybackTraceStage.RECOVERY
+            health == PlaybackHealth.BUFFERING && bufferedAheadMs <= 500L -> PlaybackTraceStage.BUFFER
+            health == PlaybackHealth.CONNECTING -> PlaybackTraceStage.NETWORK
+            else -> PlaybackTraceStage.RENDER
+        }
+
+    val summary: String
+        get() = buildString {
+            append(health.name)
+            append(" • ")
+            append(protocol)
+            append(" • buffer ")
+            append(bufferedAheadMs / 1000f)
+            append("s")
+            if (retryCount > 0) append(" • recovery ").append(retryCount)
+            if (droppedFrames > 0) append(" • dropped ").append(droppedFrames)
+        }
+}
+
 data class PlaybackDiagnostics(
     val health: PlaybackHealth = PlaybackHealth.CONNECTING,
     val retryCount: Int = 0,
