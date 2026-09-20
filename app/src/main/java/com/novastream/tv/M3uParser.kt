@@ -74,6 +74,9 @@ object M3uParser {
         val u = url.lowercase()
         return when {
             "series" in g || "/series/" in u -> MediaKind.SERIES
+            "short drama" in g || "drama short" in g || "mini drama" in g || "microdrama" in g || "micro drama" in g -> MediaKind.SHORT_DRAMA
+            "music video" in g || g.contains("mv") && "music" in g -> MediaKind.MUSIC_VIDEO
+            "music" in g || "radio" in g -> MediaKind.MUSIC
             "movie" in g || "vod" in g || "/movie/" in u || u.endsWith(".mp4") || u.endsWith(".mkv") -> MediaKind.MOVIE
             "live" in g || u.endsWith(".m3u8") || u.contains("/live/") -> MediaKind.LIVE
             else -> MediaKind.UNKNOWN
