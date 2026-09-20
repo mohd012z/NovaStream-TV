@@ -2,6 +2,7 @@ package com.novastream.tv
 
 import android.content.Context
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -37,15 +38,30 @@ object StreamPlayerFactory {
                 .setAllowVideoNonSeamlessAdaptiveness(true)
                 .build()
         }
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                6_000,  // keep enough media for temporary signal drops, without over-buffering before start
-                40_000,
-                350,    // start playback as soon as a small amount of media is ready
-                750     // resume quickly after a rebuffer instead of refilling a large buffer first
-            ).setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(15_000, true) // trim old buffered media so seeking/rebuffering stays cheap
-            .build()
+        val loadControl = DefaultLoadControl.Builder().apply {
+            when (item.kind) {
+                MediaKind.LIVE, MediaKind.UNKNOWN -> setBufferDurationsMs(
+                    2_000,   // live: avoid building a large delay behind the live edge
+                    12_000,
+                    250,     // first frame quickly
+                    750      // a little more safety after an actual rebuffer
+                )
+                MediaKind.SERIES -> setBufferDurationsMs(
+                    5_000,
+                    30_000,
+                    500,
+                    1_500
+                )
+                MediaKind.MOVIE -> setBufferDurationsMs(
+                    10_000,  // long-form VOD: favor stability once playback has begun
+                    60_000,
+                    750,
+                    2_000
+                )
+            }
+            setPrioritizeTimeOverSizeThresholds(true)
+            setBackBuffer(if (item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN) 3_000 else 15_000, true)
+        }.build()
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
 
@@ -59,5 +75,16 @@ object StreamPlayerFactory {
 
     fun build(context: Context, item: PlaylistItem): ExoPlayer = buildAdaptive(context, item).player
 
-    fun mediaItem(item: PlaylistItem): MediaItem = MediaItem.fromUri(item.streamUrl)
+    fun mediaItem(item: PlaylistItem): MediaItem {
+        val clean = item.streamUrl.substringBefore('?').lowercase()
+        val mime = when {
+            clean.endsWith(".m3u8") || clean.endsWith(".m3u") -> MimeTypes.APPLICATION_M3U8
+            clean.endsWith(".mpd") -> MimeTypes.APPLICATION_MPD
+            else -> null
+        }
+        return MediaItem.Builder()
+            .setUri(item.streamUrl)
+            .apply { if (mime != null) setMimeType(mime) }
+            .build()
+    }
 }
