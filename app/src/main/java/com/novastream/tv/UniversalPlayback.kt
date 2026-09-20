@@ -87,6 +87,12 @@ data class PlaybackTraceSnapshot(
     val videoBitrate: Int = 0,
     val videoMimeType: String? = null,
     val videoCodecs: String? = null,
+    val completedLoads: Int = 0,
+    val lastLoadBytes: Long = 0L,
+    val lastLoadDurationMs: Long = 0L,
+    val loadErrorCount: Int = 0,
+    val lastLoadError: String? = null,
+    val rebufferCount: Int = 0,
     val lastError: String? = null
 ) {
     val bufferedAheadMs: Long
@@ -112,6 +118,8 @@ data class PlaybackTraceSnapshot(
             if (retryCount > 0) append(" • recovery ").append(retryCount)
             if (bandwidthEstimateBps > 0) append(" • net ").append(bandwidthEstimateBps / 1_000_000f).append("Mbps")
             if (videoHeight > 0) append(" • ").append(videoHeight).append("p")
+            if (loadErrorCount > 0) append(" • loadErr ").append(loadErrorCount)
+            if (rebufferCount > 0) append(" • rebuffer ").append(rebufferCount)
             if (droppedFrames > 0) append(" • dropped ").append(droppedFrames)
         }
 }
