@@ -57,6 +57,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var bufferingSinceMs by remember { mutableLongStateOf(0L) }
     var firstFrameMs by remember { mutableLongStateOf(0L) }
     var stallRecoveryCount by remember { mutableIntStateOf(0) }
+    var lastProgressPositionMs by remember { mutableLongStateOf(0L) }
+    var lastProgressAtMs by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
     val startupStartedMs = remember(item.id) { android.os.SystemClock.elapsedRealtime() }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
@@ -124,6 +126,27 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         while (true) {
             currentPositionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0 } ?: 0L
+            val nowMs = android.os.SystemClock.elapsedRealtime()
+            if (currentPositionMs > lastProgressPositionMs + 250L) {
+                lastProgressPositionMs = currentPositionMs
+                lastProgressAtMs = nowMs
+            } else if (player.playWhenReady && player.playbackState == Player.STATE_READY &&
+                nowMs - lastProgressAtMs >= 6_000L && stallRecoveryCount < 2
+            ) {
+                // READY-but-frozen is different from normal buffering: data/decoder can
+                // stall without generating onPlayerError. Re-prepare at the last good point.
+                stallRecoveryCount++
+                val resumeAt = currentPositionMs
+                message = "Playback stalled • recovering…"
+                player.prepare()
+                if (item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN) {
+                    player.seekToDefaultPosition()
+                } else if (resumeAt > 0L) {
+                    player.seekTo((resumeAt - 1_000L).coerceAtLeast(0L))
+                }
+                player.playWhenReady = true
+                lastProgressAtMs = nowMs
+            }
             if (audioEffects.value == null && player.audioSessionId != 0) {
                 val controller = runCatching { AudioEffectsController(player.audioSessionId) }.getOrNull()
                 controller?.apply(audioPreset)
