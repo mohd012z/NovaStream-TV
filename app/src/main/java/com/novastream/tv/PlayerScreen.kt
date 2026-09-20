@@ -55,6 +55,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var message by remember { mutableStateOf("Connecting…") }
     var bufferingSinceMs by remember { mutableLongStateOf(0L) }
     var firstFrameMs by remember { mutableLongStateOf(0L) }
+    var stallRecoveryCount by remember { mutableIntStateOf(0) }
     val startupStartedMs = remember(item.id) { android.os.SystemClock.elapsedRealtime() }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
@@ -105,7 +106,16 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             delay(3_000)
             if (player.playbackState == Player.STATE_BUFFERING) message = "Slow stream • adapting quality…"
             delay(4_000)
-            if (player.playbackState == Player.STATE_BUFFERING) message = "Stream is taking longer than expected…"
+            if (player.playbackState == Player.STATE_BUFFERING) {
+                message = "Stream is taking longer than expected…"
+                if ((item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN) && stallRecoveryCount < 1) {
+                    stallRecoveryCount++
+                    player.seekToDefaultPosition()
+                    player.prepare()
+                    player.playWhenReady = true
+                    message = "Recovering live stream…"
+                }
+            }
         }
     }
 
@@ -147,7 +157,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             override fun onRenderedFirstFrame() {
                 if (firstFrameMs == 0L) {
                     firstFrameMs = android.os.SystemClock.elapsedRealtime() - startupStartedMs
-                    signalInfo = "Started in " + if (firstFrameMs < 1000) firstFrameMs + " ms" else String.format("%.1f s", firstFrameMs / 1000f)
+                    val firstByte = built.networkStats.firstByteDelayMs()
+                    val start = if (firstFrameMs < 1000) firstFrameMs + " ms" else String.format("%.1f s", firstFrameMs / 1000f)
+                    signalInfo = if (firstByte >= 0) "Start $start • first data ${firstByte}ms" else "Started in $start"
                 }
             }
 
@@ -169,6 +181,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     retryCount++
                     message = "Retrying $retryCount/3…"
                     handler.postDelayed({
+                        if (item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN) player.seekToDefaultPosition()
                         player.prepare()
                         player.playWhenReady = true
                     }, 900L * retryCount)
