@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -264,33 +265,43 @@ private fun buildShortDramaQueue(playlist: List<PlaylistItem>): List<PlaylistIte
 @Composable
 private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () -> Unit) {
     val context = LocalContext.current
-    var isPlaying by remember(item.id) { mutableStateOf(true) }
-    var isMuted by remember(item.id) { mutableStateOf(false) }
-    var playbackHealth by remember(item.id) { mutableStateOf(PlaybackHealth.CONNECTING) }
-    var retryCount by remember(item.id) { mutableIntStateOf(0) }
-    var bufferingSinceMs by remember(item.id) { mutableLongStateOf(0L) }
-    var showRecovery by remember(item.id) { mutableStateOf(false) }
-    var showAppearance by remember(item.id) { mutableStateOf(false) }
+    val store = remember { PlaybackStore(context) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isMuted by remember { mutableStateOf(false) }
+    var showAppearance by remember { mutableStateOf(false) }
+    var showRecovery by remember { mutableStateOf(false) }
+    var retryCount by remember { mutableIntStateOf(0) }
+    var bufferingSinceMs by remember { mutableLongStateOf(0L) }
+    var playbackHealth by remember { mutableStateOf(PlaybackHealth.CONNECTING) }
     val appearancePrefs = remember { ShortAppearancePreferences(context) }
     var appearance by remember { mutableStateOf(appearancePrefs.load()) }
-    val store = remember { PlaybackStore(context) }
-    val player = remember(item.id) { StreamPlayerFactory.build(context, item) }
 
-    DisposableEffect(item.id) {
-        player.setMediaItem(StreamPlayerFactory.mediaItem(item))
-        store.get(item.id)?.positionMs?.takeIf { it > 3_000L }?.let { player.seekTo(it) }
-        player.repeatMode = Player.REPEAT_MODE_OFF
-        player.prepare()
+    // Only the active pager page owns a player. Adjacent pages remain cheap UI
+    // placeholders, preventing multiple ExoPlayer instances from buffering at once.
+    val player: ExoPlayer? = if (isActive) {
+        remember(item.id) { StreamPlayerFactory.build(context, item) }
+    } else null
+
+    DisposableEffect(player, item.id) {
+        if (player != null) {
+            player.setMediaItem(StreamPlayerFactory.mediaItem(item))
+            store.get(item.id)?.positionMs?.takeIf { it > 3_000L }?.let(player::seekTo)
+            player.repeatMode = Player.REPEAT_MODE_OFF
+            player.prepare()
+            player.playWhenReady = true
+        }
         onDispose {
-            val duration = player.duration.coerceAtLeast(0L)
-            val position = player.currentPosition.coerceAtLeast(0L)
-            store.save(PlaybackRecord(item.id, item.name, position, duration))
-            player.stop()
-            player.release()
+            if (player != null) {
+                val duration = player.duration.coerceAtLeast(0L)
+                val position = player.currentPosition.coerceAtLeast(0L)
+                if (position > 0L) store.save(PlaybackRecord(item.id, item.name, position, duration))
+                player.release()
+            }
         }
     }
 
     DisposableEffect(player) {
+        if (player == null) return@DisposableEffect onDispose { }
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 playbackHealth = when (state) {
@@ -314,6 +325,7 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
                 playbackHealth = PlaybackHealth.RECOVERING
                 showRecovery = true
             }
+
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
             }
@@ -322,19 +334,8 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
         onDispose { player.removeListener(listener) }
     }
 
-    LaunchedEffect(isActive) {
-        if (isActive) {
-            player.playWhenReady = true
-            player.play()
-        } else {
-            player.pause()
-        }
-    }
-
-    // A short should never sit forever on a frozen frame. If Media3 remains
-    // BUFFERING for 10 seconds, try a bounded recovery from the same position.
-    LaunchedEffect(isActive, playbackHealth, bufferingSinceMs) {
-        if (isActive && playbackHealth == PlaybackHealth.BUFFERING && bufferingSinceMs > 0L) {
+    LaunchedEffect(player, playbackHealth, bufferingSinceMs) {
+        if (player != null && playbackHealth == PlaybackHealth.BUFFERING && bufferingSinceMs > 0L) {
             delay(10_000L)
             if (player.playbackState == Player.STATE_BUFFERING && retryCount < 3) {
                 val resumeAt = player.currentPosition.coerceAtLeast(0L)
@@ -351,37 +352,38 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
         }
     }
 
-    LaunchedEffect(isActive) {
-        while (isActive) {
+    LaunchedEffect(player) {
+        while (player != null) {
             delay(2_000L)
-            val duration = player.duration.coerceAtLeast(0L)
             val position = player.currentPosition.coerceAtLeast(0L)
-            if (position > 0L) store.save(PlaybackRecord(item.id, item.name, position, duration))
+            if (position > 0L) {
+                store.save(PlaybackRecord(item.id, item.name, position, player.duration.coerceAtLeast(0L)))
+            }
         }
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    this.player = player
-                    useController = false
-                    keepScreenOn = true
+        if (player != null) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        this.player = player
+                        useController = false
+                        keepScreenOn = true
+                    }
+                },
+                update = { it.player = player }
+            )
+
+            Box(
+                Modifier.fillMaxSize().clickable {
+                    if (player.isPlaying) player.pause() else player.play()
                 }
-            },
-            update = { it.player = player }
-        )
+            )
+        }
 
-        // Full-screen tap toggles play/pause; the mute/play buttons below sit
-        // on top of it (declared after, so they win hit-testing) and still work.
-        Box(
-            Modifier.fillMaxSize().clickable {
-                if (player.isPlaying) player.pause() else player.play()
-            }
-        )
-
-        if (showRecovery) {
+        if (showRecovery && player != null) {
             Surface(
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
                 color = Color.Black.copy(alpha = .82f),
@@ -389,10 +391,7 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
             ) {
                 Column(Modifier.padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        when (playbackHealth) {
-                            PlaybackHealth.ERROR -> "Playback interrupted"
-                            else -> "Recovering stream…"
-                        },
+                        if (playbackHealth == PlaybackHealth.ERROR) "Playback interrupted" else "Recovering stream…",
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
@@ -412,11 +411,7 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
         }
 
         Column(
-            Modifier
-                .align(Alignment.BottomStart)
-                .navigationBarsPadding()
-                .padding(18.dp)
-                .fillMaxWidth(.72f)
+            Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(18.dp).fillMaxWidth(.72f)
         ) {
             Text(
                 item.showName?.takeIf { it.isNotBlank() } ?: item.name,
@@ -437,40 +432,29 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
             }
         }
 
-        Column(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            IconButton(
-                onClick = { showAppearance = true },
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.Black.copy(alpha = .45f), CircleShape)
+        if (player != null) {
+            Column(
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(Icons.Filled.TextFields, "Text appearance", tint = Color.White)
-            }
-            IconButton(
-                onClick = {
-                    isMuted = !isMuted
-                    player.volume = if (isMuted) 0f else 1f
-                },
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.Black.copy(alpha = .45f), CircleShape)
-            ) {
-                Icon(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, "Mute", tint = Color.White)
-            }
-            IconButton(
-                onClick = { if (player.isPlaying) player.pause() else player.play() },
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(Color.Black.copy(alpha = .45f), CircleShape)
-            ) {
-                Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play or pause", tint = Color.White)
+                IconButton(
+                    onClick = { showAppearance = true },
+                    modifier = Modifier.size(44.dp).background(Color.Black.copy(alpha = .45f), CircleShape)
+                ) { Icon(Icons.Filled.TextFields, "Text appearance", tint = Color.White) }
+
+                IconButton(
+                    onClick = {
+                        isMuted = !isMuted
+                        player.volume = if (isMuted) 0f else 1f
+                    },
+                    modifier = Modifier.size(44.dp).background(Color.Black.copy(alpha = .45f), CircleShape)
+                ) { Icon(if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp, "Mute", tint = Color.White) }
+
+                IconButton(
+                    onClick = { if (player.isPlaying) player.pause() else player.play() },
+                    modifier = Modifier.size(44.dp).background(Color.Black.copy(alpha = .45f), CircleShape)
+                ) { Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play or pause", tint = Color.White) }
             }
         }
     }
