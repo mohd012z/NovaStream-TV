@@ -297,6 +297,8 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
     var showRecovery by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
     var bufferingSinceMs by remember { mutableLongStateOf(0L) }
+    var lastKnownPositionMs by remember { mutableLongStateOf(0L) }
+    var lastProgressAtMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var playbackHealth by remember { mutableStateOf(PlaybackHealth.CONNECTING) }
     val appearancePrefs = remember { ShortAppearancePreferences(context) }
     var appearance by remember { mutableStateOf(appearancePrefs.load()) }
@@ -338,6 +340,8 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
                         bufferingSinceMs = 0L
                         showRecovery = false
                         retryCount = 0
+                        lastKnownPositionMs = player.currentPosition.coerceAtLeast(0L)
+                        lastProgressAtMs = System.currentTimeMillis()
                         PlaybackHealth.READY
                     }
                     Player.STATE_ENDED -> PlaybackHealth.ENDED
@@ -380,9 +384,38 @@ private fun ShortDramaPage(item: PlaylistItem, isActive: Boolean, onEnded: () ->
     LaunchedEffect(player) {
         while (player != null) {
             delay(2_000L)
+            val now = System.currentTimeMillis()
             val position = player.currentPosition.coerceAtLeast(0L)
+            if (position > lastKnownPositionMs + 250L) {
+                lastKnownPositionMs = position
+                lastProgressAtMs = now
+            }
             if (position > 0L) {
                 store.save(PlaybackRecord(item.id, item.name, position, player.duration.coerceAtLeast(0L)))
+            }
+
+            // Some broken/overloaded sources stop advancing without producing a
+            // PlayerException or a long BUFFERING state. Detect that silent stall
+            // while playWhenReady is still true and recover at the same timestamp.
+            if (
+                player.playWhenReady &&
+                player.playbackState == Player.STATE_READY &&
+                !player.isPlaying &&
+                now - lastProgressAtMs >= 8_000L
+            ) {
+                val resumeAt = position
+                if (retryCount < 3) {
+                    retryCount += 1
+                    playbackHealth = PlaybackHealth.RECOVERING
+                    showRecovery = true
+                    player.prepare()
+                    if (resumeAt > 0L) player.seekTo(resumeAt)
+                    player.playWhenReady = true
+                    lastProgressAtMs = now
+                } else {
+                    playbackHealth = PlaybackHealth.ERROR
+                    showRecovery = true
+                }
             }
         }
     }
