@@ -13,7 +13,8 @@ data class PlaylistSource(
     val itemCount: Int,
     val updatedAt: Long,
     val healthy: Boolean,
-    val message: String = ""
+    val message: String = "",
+    val enabled: Boolean = true
 )
 
 class PlaylistSourceStore(private val context: Context) {
@@ -34,7 +35,8 @@ class PlaylistSourceStore(private val context: Context) {
                 PlaylistSource(
                     o.getString("id"), o.getString("name"), o.getString("url"),
                     o.optInt("itemCount"), o.optLong("updatedAt"), o.optBoolean("healthy"),
-                    o.optString("message")
+                    o.optString("message"),
+                    if (o.has("enabled")) o.optBoolean("enabled", true) else true
                 )
             }.getOrNull()
         }
@@ -51,7 +53,7 @@ class PlaylistSourceStore(private val context: Context) {
     fun hasSources(): Boolean = all().isNotEmpty()
 
     fun create(name: String, url: String, body: String, count: Int): PlaylistSource {
-        val source = PlaylistSource(UUID.randomUUID().toString(), name, url, count, System.currentTimeMillis(), true, "Ready")
+        val source = PlaylistSource(UUID.randomUUID().toString(), name, url, count, System.currentTimeMillis(), true, "Ready", true)
         upsert(source, body)
         return source
     }
@@ -59,6 +61,15 @@ class PlaylistSourceStore(private val context: Context) {
     fun delete(id: String) {
         saveList(all().filterNot { it.id == id })
         File(dir, "$id.m3u").delete()
+    }
+
+    fun setEnabled(id: String, enabled: Boolean) {
+        val list = all().toMutableList()
+        val index = list.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            list[index] = list[index].copy(enabled = enabled)
+            saveList(list)
+        }
     }
 
     fun body(id: String): String = File(dir, "$id.m3u").takeIf { it.exists() }?.readText().orEmpty()
@@ -78,7 +89,7 @@ class PlaylistSourceStore(private val context: Context) {
     }
 
     fun rebuildLibrary(repo: LibraryRepository) {
-        val bodies = all().map { body(it.id).trim() }.filter { it.isNotBlank() }
+        val bodies = all().filter { it.enabled }.map { body(it.id).trim() }.filter { it.isNotBlank() }
         if (bodies.isEmpty()) {
             repo.savePlaylist("")
             return
@@ -99,6 +110,7 @@ class PlaylistSourceStore(private val context: Context) {
                 put("id", s.id); put("name", s.name); put("url", s.url)
                 put("itemCount", s.itemCount); put("updatedAt", s.updatedAt)
                 put("healthy", s.healthy); put("message", s.message)
+                put("enabled", s.enabled)
             })
         }
         prefs.edit().putString("sources", arr.toString()).apply()
