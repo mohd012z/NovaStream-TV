@@ -41,6 +41,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
@@ -66,6 +67,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var previousVolume by remember { mutableFloatStateOf(1f) }
     var videoInfo by remember { mutableStateOf("Auto quality") }
     var signalInfo by remember { mutableStateOf("Adaptive") }
+    var showTrace by remember { mutableStateOf(false) }
+    var trace by remember(item.id) { mutableStateOf(PlaybackTraceSnapshot(sourceHost = runCatching { java.net.URI(item.streamUrl).host ?: "" }.getOrDefault(""), protocol = when { item.streamUrl.substringBefore('?').endsWith(".m3u8", true) -> "HLS"; item.streamUrl.substringBefore('?').endsWith(".mpd", true) -> "DASH"; item.streamUrl.substringBefore('?').endsWith(".mp4", true) -> "MP4"; else -> "AUTO" })) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var showAudioEffects by remember { mutableStateOf(false) }
@@ -96,6 +99,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
         while (true) {
             currentPositionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0 } ?: 0L
+            trace = trace.copy(positionMs = currentPositionMs, bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L), durationMs = durationMs, retryCount = retryCount)
             if (audioEffects.value == null && player.audioSessionId != 0) {
                 val controller = runCatching { AudioEffectsController(player.audioSessionId) }.getOrNull()
                 controller?.apply(audioPreset)
@@ -114,11 +118,18 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     Player.STATE_ENDED -> "Finished"
                     else -> "Connecting…"
                 }
+                trace = trace.copy(health = when (state) {
+                    Player.STATE_BUFFERING -> PlaybackHealth.BUFFERING
+                    Player.STATE_READY -> if (player.isPlaying) PlaybackHealth.PLAYING else PlaybackHealth.READY
+                    Player.STATE_ENDED -> PlaybackHealth.ENDED
+                    else -> PlaybackHealth.CONNECTING
+                })
                 isPlaying = player.isPlaying
             }
 
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
+                if (value) trace = trace.copy(health = PlaybackHealth.PLAYING)
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -135,6 +146,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
             override fun onPlayerError(error: PlaybackException) {
                 message = "Stream unavailable"
+                trace = trace.copy(health = PlaybackHealth.ERROR, lastError = error.errorCodeName)
                 if (prefs.autoRetry && retryCount < 3) {
                     retryCount++
                     message = "Retrying $retryCount/3…"
@@ -145,7 +157,13 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 }
             }
         }
+        val analytics = object : AnalyticsListener {
+            override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime, droppedFrames: Int, elapsedMs: Long) {
+                trace = trace.copy(droppedFrames = trace.droppedFrames + droppedFrames)
+            }
+        }
         player.addListener(listener)
+        player.addAnalyticsListener(analytics)
         onDispose {
             handler.removeCallbacksAndMessages(null)
             if (item.kind != MediaKind.LIVE) {
@@ -155,6 +173,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             }
             audioEffects.value?.release()
             player.removeListener(listener)
+            player.removeAnalyticsListener(analytics)
             player.release()
         }
     }
@@ -262,6 +281,31 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
         feedback?.let { value ->
             GestureHud(value, Modifier.align(Alignment.Center))
+        }
+
+        TextButton(
+            onClick = { showTrace = !showTrace },
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)
+        ) { Text("360", color = Color(0xFF67D6FF), fontWeight = FontWeight.Bold) }
+
+        if (showTrace) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 54.dp, end = 10.dp).widthIn(min = 210.dp, max = 300.dp),
+                color = Color.Black.copy(alpha = .82f),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("360 Playback Trace", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(trace.summary, color = Color(0xFF67D6FF), fontSize = 12.sp)
+                    if (trace.sourceHost.isNotBlank()) Text("Source: " + trace.sourceHost, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Stage: " + trace.stage.name, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Position: " + (trace.positionMs / 1000) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Buffered ahead: " + String.format("%.1f", trace.bufferedAheadMs / 1000f) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Dropped frames: " + trace.droppedFrames, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Recoveries: " + trace.retryCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    trace.lastError?.let { Text("Error: " + it, color = Color(0xFFFFB4AB), fontSize = 11.sp) }
+                }
+            }
         }
     }
 
