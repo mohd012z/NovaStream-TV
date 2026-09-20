@@ -98,11 +98,11 @@ class PlaylistSourceStore(private val context: Context) {
             appendLine("#EXTM3U")
             unique.values.forEach { item ->
                 val attrs = buildList {
-                    item.tvgId?.let { add("tvg-id=\\\""+escapeAttr(it)+"\\\"") }
-                    item.tvgName?.let { add("tvg-name=\\\""+escapeAttr(it)+"\\\"") }
-                    item.logoUrl?.let { add("tvg-logo=\\\""+escapeAttr(it)+"\\\"") }
-                    item.groupTitle?.let { add("group-title=\\\""+escapeAttr(it)+"\\\"") }
-                    item.country?.let { add("tvg-country=\\\""+escapeAttr(it)+"\\\"") }
+                    item.tvgId?.let { add("tvg-id=\\"" + escapeAttr(it) + "\\"") }
+                    item.tvgName?.let { add("tvg-name=\\"" + escapeAttr(it) + "\\"") }
+                    item.logoUrl?.let { add("tvg-logo=\\"" + escapeAttr(it) + "\\"") }
+                    item.groupTitle?.let { add("group-title=\\"" + escapeAttr(it) + "\\"") }
+                    item.country?.let { add("tvg-country=\\"" + escapeAttr(it) + "\\"") }
                 }.joinToString(" ")
                 appendLine("#EXTINF:-1 " + attrs + "," + item.name)
                 item.userAgent?.let { appendLine("#EXTVLCOPT:http-user-agent=" + it) }
@@ -113,7 +113,7 @@ class PlaylistSourceStore(private val context: Context) {
         repo.savePlaylist(merged)
     }
 
-    private fun escapeAttr(value: String): String = value.replace("\\", "\\\\").replace("\\"", "\\\\"")
+    private fun escapeAttr(value: String): String = value.replace("\\"", "'")
 
     private fun saveList(list: List<PlaylistSource>) {
         val arr = JSONArray()
