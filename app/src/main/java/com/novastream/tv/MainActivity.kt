@@ -146,7 +146,7 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.SOURCES -> PlaylistSourcesScreen(repo, onLibraryChanged = { libraryVersion++ })
                             AppPage.DOWNLOADS -> DownloadsScreen()
                             AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }, navigate = { page = it }) { libraryVersion++ }
-                            AppPage.SHORTS -> ShortDramaFeedScreen(playlist, onBack = { page = AppPage.HOME })
+                            AppPage.SHORTS -> ShortDramaFeedScreen(playlist, onBack = { page = AppPage.HOME }, onOpenMedia = { playing = it })
                         }
                     }
                 }
