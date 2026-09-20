@@ -88,6 +88,17 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     if (lastNetworkSnapshot.atMs == 0L) lastNetworkSnapshot = built.networkStats.snapshot()
     val player: ExoPlayer = built.player
     LaunchedEffect(player, item.id) {
+        // Reuse what NovaStream learned from earlier stalls on this exact endpoint.
+        // A stream that repeatedly freezes at 1080p starts conservatively next time.
+        probeCache.get(item.streamUrl)?.preferredMaxHeight
+            ?.takeIf { it != Int.MAX_VALUE && it > 0 }
+            ?.let { learnedHeight ->
+                built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                    .setMaxVideoSize(Int.MAX_VALUE, learnedHeight)
+                    .setForceHighestSupportedBitrate(false)
+                    .build()
+                selectedQualityLabel = "Auto • learned ${learnedHeight}p"
+            }
         player.setMediaItem(StreamPlayerFactory.mediaItem(item))
         if (item.kind != MediaKind.LIVE) {
             val resume = store.get(item.id)?.positionMs ?: 0L
@@ -156,7 +167,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                         .setForceHighestSupportedBitrate(false)
                         .build()
                     message = "Video stalled • lowering to ${maxHeight}p…"
+                    probeCache.markStall(item.streamUrl, maxHeight)
                 } else {
+                    probeCache.markStall(item.streamUrl, if (recoveryQualityStep > 0) 480 else 720)
                     message = if (networkMbps <= 0.01) "Source stalled • reconnecting…" else "Playback stalled • recovering…"
                 }
                 player.prepare()
