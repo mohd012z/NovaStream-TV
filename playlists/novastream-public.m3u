@@ -1,0 +1,19 @@
+#EXTM3U
+
+#EXTINF:-1 group-title="Test Streams",Apple BipBop HLS
+https://devimages.apple.com/iphone/samples/bipbop/bipbopall.m3u8
+
+#EXTINF:-1 group-title="Test Streams",Big Buck Bunny HLS
+https://pbs.github.io/test-streams/test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+
+#EXTINF:-1 group-title="Test Streams",Angel One HLS
+https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8
+
+#EXTINF:-1 group-title="Test Streams",Angel One Apple HLS
+https://storage.googleapis.com/shaka-demo-assets/angel-one-hls-apple/master.m3u8
+
+#EXTINF:-1 group-title="Live Test",Shaka Player History Live HLS
+https://storage.googleapis.com/shaka-live-assets/player-source.m3u8
+
+#EXTINF:-1 group-title="Test Streams",Tears of Steel HLS
+https://storage.googleapis.com/shaka-demo-assets/tos/hls.m3u8
