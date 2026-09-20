@@ -124,6 +124,26 @@ data class PlaybackTraceSnapshot(
         }
 }
 
+enum class RecoveryAction {
+    WAIT, RESTART_PIPELINE, REDUCE_QUALITY, DECODER_FALLBACK
+}
+
+data class RecoveryDecision(val action: RecoveryAction, val reason: String)
+
+object RecoveryBrain {
+    fun decide(trace: PlaybackTraceSnapshot): RecoveryDecision = when {
+        trace.loadErrorCount > 0 && trace.bufferedAheadMs < 1_000L ->
+            RecoveryDecision(RecoveryAction.RESTART_PIPELINE, "Network/load errors with empty buffer")
+        trace.videoBitrate > 0 && trace.bandwidthEstimateBps > 0 &&
+            trace.bandwidthEstimateBps < (trace.videoBitrate * 13L / 10L) &&
+            trace.bufferedAheadMs < 3_000L ->
+            RecoveryDecision(RecoveryAction.REDUCE_QUALITY, "Selected bitrate is too close to measured bandwidth")
+        trace.droppedFrames >= 30 && trace.bufferedAheadMs > 3_000L ->
+            RecoveryDecision(RecoveryAction.DECODER_FALLBACK, "Network buffer is healthy but decoder is dropping frames")
+        else -> RecoveryDecision(RecoveryAction.WAIT, "No forced recovery needed")
+    }
+}
+
 data class PlaybackDiagnostics(
     val health: PlaybackHealth = PlaybackHealth.CONNECTING,
     val retryCount: Int = 0,
