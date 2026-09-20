@@ -40,6 +40,23 @@ fun ShortDramaFeedScreen(playlist: List<PlaylistItem>, onBack: () -> Unit) {
     val queue = remember(playlist) { buildShortDramaQueue(playlist) }
     val pagerState = rememberPagerState(pageCount = { queue.size })
     val scope = rememberCoroutineScope()
+    var countdownPage by remember { mutableIntStateOf(-1) }
+    var countdown by remember { mutableIntStateOf(0) }
+    var completedItem by remember { mutableStateOf<PlaylistItem?>(null) }
+
+    LaunchedEffect(countdownPage, countdown) {
+        if (countdownPage >= 0 && countdown > 0) {
+            delay(1_000L)
+            if (countdown > 1) {
+                countdown -= 1
+            } else {
+                val target = countdownPage + 1
+                countdown = 0
+                countdownPage = -1
+                if (target < queue.size) pagerState.animateScrollToPage(target)
+            }
+        }
+    }
 
     BackHandler { onBack() }
 
@@ -66,11 +83,61 @@ fun ShortDramaFeedScreen(playlist: List<PlaylistItem>, onBack: () -> Unit) {
                     item = queue[page],
                     isActive = pagerState.currentPage == page,
                     onEnded = {
-                        if (page == pagerState.currentPage && page < queue.lastIndex) {
-                            scope.launch { pagerState.animateScrollToPage(page + 1) }
+                        if (page == pagerState.currentPage) {
+                            val current = queue[page]
+                            val next = queue.getOrNull(page + 1)
+                            val sameSeries = UniversalPlaybackPolicy.isSameSeries(current, next)
+                            if (sameSeries) {
+                                countdownPage = page
+                                countdown = 3
+                            } else {
+                                completedItem = current
+                            }
                         }
                     }
                 )
+            }
+        }
+
+        if (countdownPage == pagerState.currentPage && countdown > 0) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                color = Color.Black.copy(alpha = .82f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+            ) {
+                Column(Modifier.padding(horizontal = 22.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Next episode in $countdown", color = Color.White, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    TextButton(onClick = {
+                        countdownPage = -1
+                        countdown = 0
+                    }) { Text("Cancel", color = ShortsAccent) }
+                }
+            }
+        }
+
+        completedItem?.let { finished ->
+            Surface(
+                modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                color = Color.Black.copy(alpha = .9f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp)
+            ) {
+                Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.CheckCircle, null, tint = ShortsAccent, modifier = Modifier.size(42.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text("Series complete", color = Color.White, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Text(finished.showName ?: finished.name, color = Color.White.copy(alpha = .72f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            completedItem = null
+                            if (pagerState.currentPage < queue.lastIndex) {
+                                scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                            }
+                        }) { Text("Another Short", color = ShortsAccent) }
+                        TextButton(onClick = onBack) { Text("Home", color = Color.White) }
+                    }
+                }
             }
         }
 
