@@ -11,6 +11,9 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.hls.DefaultHlsExtractorFactory
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -84,10 +87,23 @@ object StreamPlayerFactory {
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
 
+        // A number of IPTV HLS feeds use MPEG-TS segments without AUDs or
+        // conventional IDR keyframes. Media3 documents these as a cause of
+        // apparently permanent buffering. Use the compatibility extractor only
+        // for HLS/live-style sources; ordinary VOD keeps the default fast path.
+        val tsCompatibilityFlags =
+            DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
+        val hlsFactory = HlsMediaSource.Factory(sourceFactory)
+            .setExtractorFactory(DefaultHlsExtractorFactory(tsCompatibilityFlags, true))
+        val mediaSourceFactory = DefaultMediaSourceFactory(context)
+            .setDataSourceFactory(sourceFactory)
+            .setServerSideAdInsertionMediaSourceFactory(hlsFactory)
+
         val player = ExoPlayer.Builder(context, renderers)
             .setTrackSelector(selector)
             .setLoadControl(loadControl)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(sourceFactory))
+            .setMediaSourceFactory(mediaSourceFactory)
             .build()
         return BuiltPlayer(player, selector)
     }
