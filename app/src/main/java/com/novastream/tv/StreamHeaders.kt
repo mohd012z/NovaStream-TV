@@ -35,7 +35,7 @@ object StreamPlayerFactory {
             .build()
     }
 
-    fun buildAdaptive(context: Context, item: PlaylistItem): BuiltPlayer {
+    fun upstreamDataSourceFactory(item: PlaylistItem): DataSource.Factory {
         val headers = mutableMapOf<String, String>()
         item.referer?.takeIf { it.isNotBlank() }?.let { headers["Referer"] = it }
         val userAgent = item.userAgent?.takeIf { it.isNotBlank() } ?: "NovaStream-TV/2.0"
@@ -52,6 +52,12 @@ object StreamPlayerFactory {
                 .setAllowCrossProtocolRedirects(true)
                 .setUserAgent(userAgent)
         }
+
+        return http
+    }
+
+    fun buildAdaptive(context: Context, item: PlaylistItem): BuiltPlayer {
+        val http = upstreamDataSourceFactory(item)
 
         // MovieBox-style lesson worth keeping: cache seekable/episodic VOD, but
         // never cache live television. Shorts benefit because replay, back-swipe,
