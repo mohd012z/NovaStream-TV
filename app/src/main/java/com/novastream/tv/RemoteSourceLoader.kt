@@ -15,7 +15,7 @@ object RemoteSourceLoader {
             readTimeout = 12000
             instanceFollowRedirects = true
             requestMethod = "GET"
-            setRequestProperty("User-Agent", "PerfectTV-Enhanced/1.0")
+            setRequestProperty("User-Agent", "NovaStreamerTV/2.0")
             setRequestProperty("Accept", "*/*")
         }
         return try {
