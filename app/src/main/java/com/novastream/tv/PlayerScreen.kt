@@ -62,6 +62,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var lastRecoveryAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastProgressPositionMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastProgressAtMs by remember(item.id) { mutableLongStateOf(System.currentTimeMillis()) }
+    var adaptiveLimitBps by remember(item.id) { mutableIntStateOf(0) }
+    var lastAdaptiveAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var showSubtitles by remember { mutableStateOf(false) }
     var showAudioTracks by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -115,6 +117,19 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             val silentStall = player.playWhenReady && player.playbackState == Player.STATE_READY &&
                 !player.isPlaying && now - lastProgressAtMs >= 8_000L
             val decision = RecoveryBrain.decide(trace)
+            if (decision.action == RecoveryAction.REDUCE_QUALITY &&
+                trace.bandwidthEstimateBps > 0L && now - lastAdaptiveAtMs >= 12_000L) {
+                val safeLimit = (trace.bandwidthEstimateBps * 70L / 100L)
+                    .coerceIn(250_000L, 20_000_000L).toInt()
+                if (adaptiveLimitBps == 0 || safeLimit < adaptiveLimitBps) {
+                    built.trackSelector.parameters = built.trackSelector.buildUponParameters()
+                        .setMaxVideoBitrate(safeLimit)
+                        .build()
+                    adaptiveLimitBps = safeLimit
+                    lastAdaptiveAtMs = now
+                    message = "Adapting quality…"
+                }
+            }
             val shouldRecover = silentStall || (trace.health == PlaybackHealth.BUFFERING &&
                 trace.bufferedAheadMs < 1_000L && decision.action == RecoveryAction.RESTART_PIPELINE)
             if (prefs.autoRetry && shouldRecover && retryCount < 3 && now - lastRecoveryAtMs >= 6_000L) {
@@ -389,6 +404,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     Text("Rebuffers: " + trace.rebufferCount + " • load errors: " + trace.loadErrorCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     val recoveryDecision = RecoveryBrain.decide(trace)
                     Text("Recovery: " + recoveryDecision.action.name, color = Color(0xFF78F1C7), fontSize = 11.sp)
+                    if (adaptiveLimitBps > 0) Text("Adaptive ceiling: " + (adaptiveLimitBps / 1_000_000f) + " Mbps", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     if (item.kind == MediaKind.SHORT_DRAMA) Text("Preload: " + MediaPreloadManager.state, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.lastLoadError?.let { Text("Last load error: " + it, color = Color(0xFFFFDDB4), fontSize = 11.sp) }
                     Text("Dropped frames: " + trace.droppedFrames, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
