@@ -59,6 +59,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
     var hasPlayedOnce by remember(item.id) { mutableStateOf(false) }
+    var rebufferStartedAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastRecoveryAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastProgressPositionMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastProgressAtMs by remember(item.id) { mutableLongStateOf(System.currentTimeMillis()) }
@@ -165,10 +166,24 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 }
                 trace = trace.copy(health = when (state) {
                     Player.STATE_BUFFERING -> {
-                        if (hasPlayedOnce) trace = trace.copy(rebufferCount = trace.rebufferCount + 1)
+                        if (hasPlayedOnce && rebufferStartedAtMs == 0L) {
+                            rebufferStartedAtMs = System.currentTimeMillis()
+                            trace = trace.copy(rebufferCount = trace.rebufferCount + 1)
+                        }
                         PlaybackHealth.BUFFERING
                     }
-                    Player.STATE_READY -> if (player.isPlaying) PlaybackHealth.PLAYING else PlaybackHealth.READY
+                    Player.STATE_READY -> {
+                        if (rebufferStartedAtMs > 0L) {
+                            val elapsed = (System.currentTimeMillis() - rebufferStartedAtMs).coerceAtLeast(0L)
+                            trace = trace.copy(
+                                totalRebufferMs = trace.totalRebufferMs + elapsed,
+                                maxRebufferMs = maxOf(trace.maxRebufferMs, elapsed),
+                                lastRebufferMs = elapsed
+                            )
+                            rebufferStartedAtMs = 0L
+                        }
+                        if (player.isPlaying) PlaybackHealth.PLAYING else PlaybackHealth.READY
+                    }
                     Player.STATE_ENDED -> PlaybackHealth.ENDED
                     else -> PlaybackHealth.CONNECTING
                 })
@@ -403,6 +418,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     trace.videoCodecs?.let { Text("Codec: " + it, color = Color.White.copy(alpha=.8f), fontSize = 11.sp) }
                     if (trace.completedLoads > 0) Text("Loads: " + trace.completedLoads + " • last " + trace.lastLoadBytes / 1024 + " KB / " + trace.lastLoadDurationMs + " ms", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Rebuffers: " + trace.rebufferCount + " • load errors: " + trace.loadErrorCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Rebuffer time: " + (trace.totalRebufferMs / 1000f) + "s • max " + (trace.maxRebufferMs / 1000f) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     val recoveryDecision = RecoveryBrain.decide(trace)
                     Text("Recovery: " + recoveryDecision.action.name, color = Color(0xFF78F1C7), fontSize = 11.sp)
                     if (adaptiveLimitBps > 0) Text("Adaptive ceiling: " + (adaptiveLimitBps / 1_000_000f) + " Mbps", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
