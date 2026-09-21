@@ -424,7 +424,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     Text("Rebuffers: " + trace.rebufferCount + " • load errors: " + trace.loadErrorCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Rebuffer time: " + (trace.totalRebufferMs / 1000f) + "s • max " + (trace.maxRebufferMs / 1000f) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     val recoveryDecision = RecoveryBrain.decide(trace)
-                    Text("Recovery: " + recoveryDecision.action.name, color = Color(0xFF78F1C7), fontSize = 11.sp)
+                    Text("Recovery: " + recoveryDecision.action.name + " • " + recoveryDecision.cause.name, color = Color(0xFF78F1C7), fontSize = 11.sp)
+                    Text("Reason: " + recoveryDecision.reason, color = Color.White.copy(alpha=.72f), fontSize = 10.sp)
                     if (adaptiveLimitBps > 0) Text("Adaptive ceiling: " + (adaptiveLimitBps / 1_000_000f) + " Mbps", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     if (item.kind == MediaKind.SHORT_DRAMA) Text("Preload: " + MediaPreloadManager.state, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.lastLoadError?.let { Text("Last load error: " + it, color = Color(0xFFFFDDB4), fontSize = 11.sp) }
