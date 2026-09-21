@@ -97,6 +97,9 @@ data class PlaybackTraceSnapshot(
     val loadErrorCount: Int = 0,
     val lastLoadError: String? = null,
     val rebufferCount: Int = 0,
+    val totalRebufferMs: Long = 0L,
+    val maxRebufferMs: Long = 0L,
+    val lastRebufferMs: Long = 0L,
     val lastError: String? = null
 ) {
     val bufferedAheadMs: Long
@@ -137,6 +140,7 @@ data class PlaybackTraceSnapshot(
             if (videoHeight > 0) append(" • ").append(videoHeight).append("p")
             if (loadErrorCount > 0) append(" • loadErr ").append(loadErrorCount)
             if (rebufferCount > 0) append(" • rebuffer ").append(rebufferCount)
+            if (totalRebufferMs > 0) append(" • rbTime ").append(totalRebufferMs / 1000f).append("s")
             if (droppedFrames > 0) append(" • dropped ").append(droppedFrames)
         }
 }
