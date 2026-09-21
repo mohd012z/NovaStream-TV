@@ -18,7 +18,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-
       - name: Set Android SDK environment
         run: |
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"

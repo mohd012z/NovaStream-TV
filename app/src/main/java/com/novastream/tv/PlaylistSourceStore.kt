@@ -94,14 +94,36 @@ class PlaylistSourceStore(private val context: Context) {
             repo.savePlaylist("")
             return
         }
+
+        val unique = LinkedHashMap<String, PlaylistItem>()
+        bodies.forEach { raw ->
+            M3uParser.parse(raw).forEach { item ->
+                val key = item.streamUrl.substringBefore('|').trim().lowercase().trimEnd('/')
+                unique.putIfAbsent(key, item)
+            }
+        }
+
         val merged = buildString {
             appendLine("#EXTM3U")
-            bodies.forEach { raw ->
-                raw.lineSequence().filterNot { it.trim().equals("#EXTM3U", true) }.forEach { appendLine(it) }
+            unique.values.forEach { item ->
+                val attrs = buildList {
+                    item.tvgId?.let { add("tvg-id=" + quoted(it)) }
+                    item.tvgName?.let { add("tvg-name=" + quoted(it)) }
+                    item.logoUrl?.let { add("tvg-logo=" + quoted(it)) }
+                    item.groupTitle?.let { add("group-title=" + quoted(it)) }
+                    item.country?.let { add("tvg-country=" + quoted(it)) }
+                }.joinToString(" ")
+                appendLine("#EXTINF:-1 " + attrs + "," + item.name)
+                item.userAgent?.let { appendLine("#EXTVLCOPT:http-user-agent=" + it) }
+                item.referer?.let { appendLine("#EXTVLCOPT:http-referrer=" + it) }
+                appendLine(item.streamUrl)
             }
         }
         repo.savePlaylist(merged)
     }
+
+    private fun quoted(value: String): String =
+        34.toChar().toString() + value.replace(34.toChar(), 39.toChar()) + 34.toChar()
 
     private fun saveList(list: List<PlaylistSource>) {
         val arr = JSONArray()
