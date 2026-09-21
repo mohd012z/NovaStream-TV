@@ -149,19 +149,57 @@ enum class RecoveryAction {
     WAIT, RESTART_PIPELINE, REDUCE_QUALITY, DECODER_FALLBACK
 }
 
-data class RecoveryDecision(val action: RecoveryAction, val reason: String)
+enum class RecoveryCause {
+    NORMAL_BUFFERING, NETWORK_STARVATION, SOURCE_FAILURE, DECODER_RENDER, UNKNOWN
+}
+
+data class RecoveryDecision(
+    val action: RecoveryAction,
+    val reason: String,
+    val cause: RecoveryCause = RecoveryCause.UNKNOWN
+)
 
 object RecoveryBrain {
     fun decide(trace: PlaybackTraceSnapshot): RecoveryDecision = when {
-        trace.loadErrorCount > 0 && trace.bufferedAheadMs < 1_000L ->
-            RecoveryDecision(RecoveryAction.RESTART_PIPELINE, "Network/load errors with empty buffer")
+        trace.loadErrorCount > 0 && trace.bufferedAheadMs < 1_000L &&
+            (trace.lastRebufferMs >= 4_000L || trace.health == PlaybackHealth.ERROR) ->
+            RecoveryDecision(
+                RecoveryAction.RESTART_PIPELINE,
+                "Repeated load failure with an exhausted buffer",
+                RecoveryCause.SOURCE_FAILURE
+            )
+
         trace.videoBitrate > 0 && trace.bandwidthEstimateBps > 0 &&
             trace.bandwidthEstimateBps < (trace.videoBitrate * 13L / 10L) &&
-            trace.bufferedAheadMs < 3_000L ->
-            RecoveryDecision(RecoveryAction.REDUCE_QUALITY, "Selected bitrate is too close to measured bandwidth")
-        trace.droppedFrames >= 30 && trace.bufferedAheadMs > 3_000L ->
-            RecoveryDecision(RecoveryAction.DECODER_FALLBACK, "Network buffer is healthy but decoder is dropping frames")
-        else -> RecoveryDecision(RecoveryAction.WAIT, "No forced recovery needed")
+            (trace.bufferedAheadMs < 3_000L || trace.lastRebufferMs >= 2_500L) ->
+            RecoveryDecision(
+                RecoveryAction.REDUCE_QUALITY,
+                "Measured bandwidth cannot safely sustain the selected track",
+                RecoveryCause.NETWORK_STARVATION
+            )
+
+        trace.droppedFrames >= 30 && trace.bufferedAheadMs > 3_000L &&
+            (trace.bandwidthEstimateBps == 0L || trace.videoBitrate <= 0 ||
+                trace.bandwidthEstimateBps >= trace.videoBitrate * 2L) ->
+            RecoveryDecision(
+                RecoveryAction.DECODER_FALLBACK,
+                "Buffer and network are healthy while render drops frames",
+                RecoveryCause.DECODER_RENDER
+            )
+
+        trace.health == PlaybackHealth.BUFFERING && trace.lastRebufferMs < 2_500L &&
+            trace.loadErrorCount == 0 ->
+            RecoveryDecision(
+                RecoveryAction.WAIT,
+                "Short buffering episode; allow adaptive playback to recover",
+                RecoveryCause.NORMAL_BUFFERING
+            )
+
+        else -> RecoveryDecision(
+            RecoveryAction.WAIT,
+            "No forced recovery needed",
+            RecoveryCause.UNKNOWN
+        )
     }
 }
 
