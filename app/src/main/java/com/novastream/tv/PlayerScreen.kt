@@ -3,6 +3,9 @@ package com.novastream.tv
 import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.pm.ActivityInfo
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.Build
@@ -78,6 +81,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var videoInfo by remember { mutableStateOf("Auto quality") }
     var signalInfo by remember { mutableStateOf("Adaptive") }
     var showTrace by remember { mutableStateOf(false) }
+    var traceTab by remember { mutableStateOf("DETAIL") }
     var trace by remember(item.id) { mutableStateOf(PlaybackTraceSnapshot(sourceHost = runCatching { java.net.URI(item.streamUrl).host ?: "" }.getOrDefault(""), protocol = when { item.streamUrl.substringBefore('?').endsWith(".m3u8", true) -> "HLS"; item.streamUrl.substringBefore('?').endsWith(".mpd", true) -> "DASH"; item.streamUrl.substringBefore('?').endsWith(".mp4", true) -> "MP4"; else -> "AUTO" })) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -427,6 +431,46 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     Text("Dropped frames: " + trace.droppedFrames, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Recoveries: " + trace.retryCount, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.lastError?.let { Text("Error: " + it, color = Color(0xFFFFB4AB), fontSize = 11.sp) }
+                    val safeUrl = runCatching {
+                        val u = java.net.URI(item.streamUrl)
+                        java.net.URI(u.scheme, null, u.host, u.port, u.path, null, null).toString()
+                    }.getOrDefault(trace.sourceHost)
+                    val routeText = "SOURCE > " + trace.protocol + " > " + trace.stage.name + " > " + trace.health.name
+                    val mapText = "source=" + trace.sourceHealth.name + " | network=" +
+                        (if (trace.bandwidthEstimateBps > 0) String.format("%.2fMbps", trace.bandwidthEstimateBps / 1_000_000f) else "unknown") +
+                        " | buffer=" + String.format("%.1fs", trace.bufferedAheadMs / 1000f) + " | render=" + trace.videoHeight + "p"
+                    val jsonText = "{\"host\":\"" + trace.sourceHost + "\",\"protocol\":\"" + trace.protocol +
+                        "\",\"health\":\"" + trace.health.name + "\",\"sourceHealth\":\"" + trace.sourceHealth.name +
+                        "\",\"stage\":\"" + trace.stage.name + "\",\"positionMs\":" + trace.positionMs +
+                        ",\"bufferedAheadMs\":" + trace.bufferedAheadMs + ",\"bandwidthBps\":" + trace.bandwidthEstimateBps +
+                        ",\"videoWidth\":" + trace.videoWidth + ",\"videoHeight\":" + trace.videoHeight +
+                        ",\"videoBitrate\":" + trace.videoBitrate + ",\"loads\":" + trace.completedLoads +
+                        ",\"loadErrors\":" + trace.loadErrorCount + ",\"rebuffers\":" + trace.rebufferCount +
+                        ",\"totalRebufferMs\":" + trace.totalRebufferMs + ",\"maxRebufferMs\":" + trace.maxRebufferMs +
+                        ",\"droppedFrames\":" + trace.droppedFrames + ",\"recoveries\":" + trace.retryCount + "}"
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        listOf("DETAIL","ROUTES","MAP","URLS","JSON").forEach { tab ->
+                            TextButton(onClick = { traceTab = tab }, contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp)) {
+                                Text(tab, fontSize = 9.sp, color = if (traceTab == tab) Color(0xFF67D6FF) else Color.White.copy(alpha=.7f))
+                            }
+                        }
+                    }
+                    val tabText = when (traceTab) {
+                        "ROUTES" -> routeText
+                        "MAP" -> mapText
+                        "URLS" -> safeUrl
+                        "JSON" -> jsonText
+                        else -> trace.summary
+                    }
+                    if (traceTab != "DETAIL") Text(tabText, color = Color.White.copy(alpha=.85f), fontSize = 10.sp)
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("NovaStream 360 " + traceTab, tabText))
+                    }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                        Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Copy " + traceTab.lowercase(), fontSize = 10.sp)
+                    }
                 }
             }
         }
