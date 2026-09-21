@@ -394,6 +394,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     Text(trace.summary, color = Color(0xFF67D6FF), fontSize = 12.sp)
                     if (trace.sourceHost.isNotBlank()) Text("Source: " + trace.sourceHost, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Stage: " + trace.stage.name, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
+                    Text("Source health: " + trace.sourceHealth.name, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Position: " + (trace.positionMs / 1000) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Buffered ahead: " + String.format("%.1f", trace.bufferedAheadMs / 1000f) + "s", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     if (trace.bandwidthEstimateBps > 0) Text("Bandwidth: " + String.format("%.2f", trace.bandwidthEstimateBps / 1_000_000f) + " Mbps", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
