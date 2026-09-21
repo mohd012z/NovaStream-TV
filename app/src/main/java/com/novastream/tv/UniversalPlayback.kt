@@ -72,6 +72,10 @@ enum class PlaybackTraceStage {
     SOURCE, NETWORK, MANIFEST, BUFFER, DECODER, RENDER, RECOVERY
 }
 
+enum class SourceHealth {
+    READY, SLOW, BUFFERING, UNAVAILABLE, FAILED, UNKNOWN
+}
+
 data class PlaybackTraceSnapshot(
     val health: PlaybackHealth = PlaybackHealth.CONNECTING,
     val sourceHost: String = "",
@@ -107,11 +111,24 @@ data class PlaybackTraceSnapshot(
             else -> PlaybackTraceStage.RENDER
         }
 
+    val sourceHealth: SourceHealth
+        get() = when {
+            health == PlaybackHealth.ERROR && loadErrorCount > 0 -> SourceHealth.FAILED
+            health == PlaybackHealth.ERROR -> SourceHealth.UNAVAILABLE
+            health == PlaybackHealth.BUFFERING && bufferedAheadMs < 1_000L -> SourceHealth.BUFFERING
+            bandwidthEstimateBps > 0L && videoBitrate > 0 &&
+                bandwidthEstimateBps < (videoBitrate * 13L / 10L) -> SourceHealth.SLOW
+            health == PlaybackHealth.PLAYING || health == PlaybackHealth.READY -> SourceHealth.READY
+            health == PlaybackHealth.CONNECTING -> SourceHealth.UNKNOWN
+            else -> SourceHealth.UNKNOWN
+        }
+
     val summary: String
         get() = buildString {
             append(health.name)
             append(" • ")
             append(protocol)
+            append(" • source ").append(sourceHealth.name)
             append(" • buffer ")
             append(bufferedAheadMs / 1000f)
             append("s")
