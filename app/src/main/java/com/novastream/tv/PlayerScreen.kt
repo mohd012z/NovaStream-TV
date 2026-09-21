@@ -426,6 +426,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     val recoveryDecision = RecoveryBrain.decide(trace)
                     Text("Recovery: " + recoveryDecision.action.name + " • " + recoveryDecision.cause.name, color = Color(0xFF78F1C7), fontSize = 11.sp)
                     Text("Reason: " + recoveryDecision.reason, color = Color.White.copy(alpha=.72f), fontSize = 10.sp)
+                    val lola = LolaBridge.packet(item, trace)
+                    Text("LOLA: " + lola.recommendation, color = Color(0xFFB8E6FF), fontSize = 10.sp)
                     if (adaptiveLimitBps > 0) Text("Adaptive ceiling: " + (adaptiveLimitBps / 1_000_000f) + " Mbps", color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     if (item.kind == MediaKind.SHORT_DRAMA) Text("Preload: " + MediaPreloadManager.state, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     trace.lastLoadError?.let { Text("Last load error: " + it, color = Color(0xFFFFDDB4), fontSize = 11.sp) }
@@ -460,7 +462,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                         "ROUTES" -> routeText
                         "MAP" -> mapText
                         "URLS" -> safeUrl
-                        "JSON" -> jsonText
+                        "JSON" -> lola.json
                         else -> trace.summary
                     }
                     if (traceTab != "DETAIL") Text(tabText, color = Color.White.copy(alpha=.85f), fontSize = 10.sp)
