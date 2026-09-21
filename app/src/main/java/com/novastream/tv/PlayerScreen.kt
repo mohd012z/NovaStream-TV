@@ -37,6 +37,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.Tracks
@@ -82,6 +87,8 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var signalInfo by remember { mutableStateOf("Adaptive") }
     var showTrace by remember { mutableStateOf(false) }
     var traceTab by remember { mutableStateOf("DETAIL") }
+    var traceOffsetX by remember { mutableFloatStateOf(0f) }
+    var traceOffsetY by remember { mutableFloatStateOf(0f) }
     var trace by remember(item.id) { mutableStateOf(PlaybackTraceSnapshot(sourceHost = runCatching { java.net.URI(item.streamUrl).host ?: "" }.getOrDefault(""), protocol = when { item.streamUrl.substringBefore('?').endsWith(".m3u8", true) -> "HLS"; item.streamUrl.substringBefore('?').endsWith(".mpd", true) -> "DASH"; item.streamUrl.substringBefore('?').endsWith(".mp4", true) -> "MP4"; else -> "AUTO" })) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -404,12 +411,44 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
         if (showTrace) {
             Surface(
-                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 54.dp, end = 10.dp).widthIn(min = 210.dp, max = 300.dp),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 54.dp, end = 10.dp)
+                    .offset { IntOffset(traceOffsetX.roundToInt(), traceOffsetY.roundToInt()) }
+                    .widthIn(min = 240.dp, max = 340.dp)
+                    .heightIn(max = 560.dp),
                 color = Color.Black.copy(alpha = .82f),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("360 Playback Trace", color = Color.White, fontWeight = FontWeight.Bold)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    traceOffsetX += dragAmount.x
+                                    traceOffsetY += dragAmount.y
+                                }
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.DragIndicator, null, tint = Color(0xFF67D6FF), modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("360 Playback Trace", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { traceOffsetX = 0f; traceOffsetY = 0f }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                            Text("RESET", fontSize = 8.sp)
+                        }
+                    }
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                    Text(trace.summary, color = Color(0xFF67D6FF), fontSize = 12.sp)
                     Text(trace.summary, color = Color(0xFF67D6FF), fontSize = 12.sp)
                     if (trace.sourceHost.isNotBlank()) Text("Source: " + trace.sourceHost, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
                     Text("Stage: " + trace.stage.name, color = Color.White.copy(alpha=.8f), fontSize = 11.sp)
@@ -473,6 +512,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                         Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(13.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Copy " + traceTab.lowercase(), fontSize = 10.sp)
+                    }
                     }
                 }
             }
