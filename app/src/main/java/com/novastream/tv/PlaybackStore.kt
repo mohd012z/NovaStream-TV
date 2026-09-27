@@ -35,6 +35,21 @@ class PlaybackStore(context: Context) {
         )
     }
 
+    fun remove(id: String) {
+        prefs.edit()
+            .remove("$id.title")
+            .remove("$id.position")
+            .remove("$id.duration")
+            .remove("$id.updated")
+            .apply()
+    }
+
+    fun clear() = prefs.edit().clear().apply()
+
+    fun removeWatched(threshold: Float = 0.90f) {
+        recent(Int.MAX_VALUE).filter { it.durationMs > 0 && it.progress >= threshold }.forEach { remove(it.id) }
+    }
+
     fun recent(limit: Int = 12): List<PlaybackRecord> {
         val ids = prefs.all.keys.mapNotNull { key -> key.substringBefore(".").takeIf { key.endsWith(".title") } }.distinct()
         return ids.mapNotNull(::get).sortedByDescending { it.updatedAt }.take(limit)
