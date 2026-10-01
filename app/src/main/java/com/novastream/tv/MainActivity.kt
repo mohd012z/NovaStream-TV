@@ -67,13 +67,14 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class OrientationChoice { PORTRAIT, LANDSCAPE, AUTO }
-enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, SOURCES, DOWNLOADS, SETTINGS, SHORTS }
+enum class AppPage { HOME, LIVE, MOVIES, SERIES, SEARCH, HISTORY, CONTROL, SOURCES, DOWNLOADS, SETTINGS, SHORTS }
 
 @Composable
 fun NovaStreamApp(activity: MainActivity) {
     val context = LocalContext.current
     val repo = remember { LibraryRepository(context) }
     val sourceStore = remember { PlaylistSourceStore(context) }
+    val memoryRepo = remember { memoryRepositoryFor(context) }
     val appearance = remember { AppearancePreferences(context) }
     var appearanceVersion by remember { mutableIntStateOf(0) }
     var showSplash by remember { mutableStateOf(true) }
@@ -143,6 +144,14 @@ fun NovaStreamApp(activity: MainActivity) {
                             AppPage.SERIES -> MediaLibraryScreen("Series", playlist.filter { it.kind == MediaKind.SERIES }, epgIndex, groupShows = true) { playing = it }
                             AppPage.SEARCH -> SearchScreen(playlist, epgIndex) { playing = it }
                             AppPage.HISTORY -> HistoryScreen(activity, playlist) { playing = it }
+                            AppPage.CONTROL -> ControlScreen(
+                                context = context,
+                                playlist = playlist,
+                                sources = sourceStore.all(),
+                                repo = memoryRepo,
+                                securityEnabled = true,
+                                restrictedEnabled = RestrictedContentPreferences(context).enabled
+                            )
                             AppPage.SOURCES -> PlaylistSourcesScreen(repo, onLibraryChanged = { libraryVersion++ })
                             AppPage.DOWNLOADS -> DownloadsScreen()
                             AppPage.SETTINGS -> SettingsScreen(repo, playlist, epg, onAppearanceChanged = { appearanceVersion++ }, navigate = { page = it }) { libraryVersion++ }
@@ -235,7 +244,8 @@ private fun BottomBar(current: AppPage, onSelect: (AppPage) -> Unit) {
 
         listOf(
             Triple(AppPage.SEARCH, "Search", Icons.Filled.Search),
-            Triple(AppPage.HISTORY, "History", Icons.Filled.History)
+            Triple(AppPage.HISTORY, "History", Icons.Filled.History),
+            Triple(AppPage.CONTROL, "Control", Icons.Filled.Shield)
         ).forEach { (page, label, icon) ->
             NavigationBarItem(
                 selected = current == page,
