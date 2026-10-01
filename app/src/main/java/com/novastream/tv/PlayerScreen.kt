@@ -84,6 +84,9 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var isMuted by remember { mutableStateOf(false) }
     var previousVolume by remember { mutableFloatStateOf(1f) }
     var videoInfo by remember { mutableStateOf("Auto quality") }
+    // -1 = not an HLS source (or unknown yet). For live HLS this is the
+    // EXT-X-MEDIA-SEQUENCE of the loaded media playlist.
+    var hlsMediaSequence by remember(item.id) { mutableLongStateOf(-1L) }
     var signalInfo by remember { mutableStateOf("Adaptive") }
     var showTrace by remember { mutableStateOf(false) }
     var traceTab by remember { mutableStateOf("DETAIL") }
@@ -99,7 +102,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
     val built = remember(item.id) { StreamPlayerFactory.buildAdaptive(context, item) }
     val player: ExoPlayer = built.player
+    val isLiveItem = item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
+    val stallWatchdog = remember(item.id) { LiveStallWatchdog() }
     LaunchedEffect(player, item.id) {
+        stallWatchdog.reset()
         player.setMediaItem(StreamPlayerFactory.mediaItem(item))
         if (item.kind != MediaKind.LIVE) {
             val resume = store.get(item.id)?.positionMs ?: 0L
@@ -125,6 +131,24 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
             if (currentPositionMs > lastProgressPositionMs + 250L) {
                 lastProgressPositionMs = currentPositionMs
                 lastProgressAtMs = now
+            }
+            // Stale-feed watchdog: LIVE HLS whose media sequence never advances
+            // while the playback position freezes => the playlist is frozen
+            // (verified: ptv2026 VIP feeds serve a 9-day-old static playlist).
+            // The existing auto-recovery path re-loads and re-arms the watchdog.
+            if (isLiveItem) {
+                val frozen = stallWatchdog.onTick(now, currentPositionMs, hlsMediaSequence.takeIf { it >= 0 })
+                if (frozen && prefs.autoRetry && retryCount < 3 && now - lastRecoveryAtMs >= 6_000L) {
+                    retryCount++
+                    lastRecoveryAtMs = now
+                    trace = trace.copy(health = PlaybackHealth.RECOVERING, retryCount = retryCount)
+                    message = "Stalled — feed not updating, reloading…"
+                    player.stop()
+                    player.setMediaItem(StreamPlayerFactory.mediaItem(item))
+                    player.prepare()
+                    player.playWhenReady = true
+                    lastProgressAtMs = now
+                }
             }
             val silentStall = player.playWhenReady && player.playbackState == Player.STATE_READY &&
                 !player.isPlaying && now - lastProgressAtMs >= 8_000L
@@ -214,6 +238,20 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     .filter { it.type == C.TRACK_TYPE_VIDEO }
                     .flatMap { group -> (0 until group.length).asSequence().filter { group.isTrackSelected(it) }.map { group.getTrackFormat(it) } }
                     .firstOrNull()
+                // Live HLS: the selected track's periodId is HlsMediaPeriod.PeriodId,
+                // whose mediaSequenceNumber is EXT-X-MEDIA-SEQUENCE. A forward jump
+                // proves the playlist is alive (clears the stall watchdog).
+                tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }
+                    ?.let { g -> g.groupId.periodId as? androidx.media3.exoplayer.hls.HlsMediaPeriod.PeriodId }
+                    ?.let { pid ->
+                        val seq = pid.mediaSequenceNumber
+                        if (seq >= 0) {
+                            if (hlsMediaSequence >= 0 && seq > hlsMediaSequence) {
+                                stallWatchdog.onSequenceAdvanced()
+                            }
+                            hlsMediaSequence = seq
+                        }
+                    }
                 if (video != null) {
                     val size = if (video.height > 0) "${video.height}p" else "Auto"
                     val fps = if (video.frameRate > 0) " • ${video.frameRate.toInt()} fps" else ""
