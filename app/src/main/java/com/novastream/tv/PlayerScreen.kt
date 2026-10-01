@@ -63,10 +63,12 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     val activity = context as Activity
     val store = remember { PlaybackStore(context) }
     val prefs = remember { PlayerPreferences(context) }
+    val memoryRepo = remember { memoryRepositoryFor(context) }
     var message by remember { mutableStateOf("Connecting…") }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
     var hasPlayedOnce by remember(item.id) { mutableStateOf(false) }
+    var urlMarkedPlayed by remember(item.id) { mutableStateOf(false) }
     var rebufferStartedAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastRecoveryAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastProgressPositionMs by remember(item.id) { mutableLongStateOf(0L) }
@@ -139,6 +141,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     retryCount++
                     lastRecoveryAtMs = now
                     stallWatchdog.reset()
+                    UrlIntelligenceRuntime.markStaleFeed(item.streamUrl, memoryRepo)
                     trace = trace.copy(health = PlaybackHealth.RECOVERING, retryCount = retryCount)
                     message = "Stalled — feed not updating, reloading…"
                     player.stop()
@@ -229,6 +232,12 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 if (value) {
                     hasPlayedOnce = true
                     trace = trace.copy(health = PlaybackHealth.PLAYING)
+                    // Runtime evidence for the URL Intelligence engine: the user
+                    // actually played this stream (not just a discovered string).
+                    if (!urlMarkedPlayed) {
+                        urlMarkedPlayed = true
+                        UrlIntelligenceRuntime.markPlayed(item.streamUrl)
+                    }
                 }
             }
 

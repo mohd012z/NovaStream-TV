@@ -67,7 +67,7 @@ fun ControlScreen(
     var section by remember { mutableStateOf(ControlSection.DASHBOARD) }
     val timeFmt = remember { SimpleDateFormat("HH:mm", Locale.US) }
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US) }
-    val urlEngine = remember { UrlIntelligence() }
+    val urlEngine = UrlIntelligenceRuntime.engine
 
     // ---- derived state (single source: playlist + sources + memory) ----
     val liveItems = playlist.filter { it.kind == MediaKind.LIVE || it.kind == MediaKind.UNKNOWN }
