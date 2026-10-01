@@ -84,9 +84,6 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     var isMuted by remember { mutableStateOf(false) }
     var previousVolume by remember { mutableFloatStateOf(1f) }
     var videoInfo by remember { mutableStateOf("Auto quality") }
-    // -1 = not an HLS source (or unknown yet). For live HLS this is the
-    // EXT-X-MEDIA-SEQUENCE of the loaded media playlist.
-    var hlsMediaSequence by remember(item.id) { mutableLongStateOf(-1L) }
     var signalInfo by remember { mutableStateOf("Adaptive") }
     var showTrace by remember { mutableStateOf(false) }
     var traceTab by remember { mutableStateOf("DETAIL") }
@@ -132,15 +129,16 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 lastProgressPositionMs = currentPositionMs
                 lastProgressAtMs = now
             }
-            // Stale-feed watchdog: LIVE HLS whose media sequence never advances
-            // while the playback position freezes => the playlist is frozen
-            // (verified: ptv2026 VIP feeds serve a 9-day-old static playlist).
-            // The existing auto-recovery path re-loads and re-arms the watchdog.
+            // Stale-feed watchdog: on a LIVE item, flat playback position for
+            // 45 s means the feed stopped delivering (verified: ptv2026 VIP
+            // feeds serve a 9-day-old frozen HLS window). The existing
+            // auto-recovery path reloads and the watchdog re-arms on reset().
             if (isLiveItem) {
-                val frozen = stallWatchdog.onTick(now, currentPositionMs, hlsMediaSequence.takeIf { it >= 0 })
+                val frozen = stallWatchdog.onTick(now, currentPositionMs)
                 if (frozen && prefs.autoRetry && retryCount < 3 && now - lastRecoveryAtMs >= 6_000L) {
                     retryCount++
                     lastRecoveryAtMs = now
+                    stallWatchdog.reset()
                     trace = trace.copy(health = PlaybackHealth.RECOVERING, retryCount = retryCount)
                     message = "Stalled — feed not updating, reloading…"
                     player.stop()
@@ -172,6 +170,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 val resumeAt = player.currentPosition.coerceAtLeast(0L)
                 retryCount++
                 lastRecoveryAtMs = now
+                stallWatchdog.reset()
                 trace = trace.copy(health = PlaybackHealth.RECOVERING, retryCount = retryCount)
                 message = "Recovering $retryCount/3…"
                 player.stop()
@@ -238,20 +237,6 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                     .filter { it.type == C.TRACK_TYPE_VIDEO }
                     .flatMap { group -> (0 until group.length).asSequence().filter { group.isTrackSelected(it) }.map { group.getTrackFormat(it) } }
                     .firstOrNull()
-                // Live HLS: the selected track's periodId is HlsMediaPeriod.PeriodId,
-                // whose mediaSequenceNumber is EXT-X-MEDIA-SEQUENCE. A forward jump
-                // proves the playlist is alive (clears the stall watchdog).
-                tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }
-                    ?.let { g -> g.groupId.periodId as? androidx.media3.exoplayer.hls.HlsMediaPeriod.PeriodId }
-                    ?.let { pid ->
-                        val seq = pid.mediaSequenceNumber
-                        if (seq >= 0) {
-                            if (hlsMediaSequence >= 0 && seq > hlsMediaSequence) {
-                                stallWatchdog.onSequenceAdvanced()
-                            }
-                            hlsMediaSequence = seq
-                        }
-                    }
                 if (video != null) {
                     val size = if (video.height > 0) "${video.height}p" else "Auto"
                     val fps = if (video.frameRate > 0) " • ${video.frameRate.toInt()} fps" else ""

@@ -1,41 +1,36 @@
 package com.novastream.tv
 
 /**
- * Live HLS stall watchdog (Anam bug report, 2026-10-01: "plays a few seconds,
+ * Live stall watchdog (Anam bug report, 2026-10-01: "plays a few seconds,
  * then freezes").
  *
- * Root cause verified in the field (ptv2026 VIP feeds): the origin keeps
- * serving a FROZEN media playlist — the same segment window, an unchanged
- * EXT-X-MEDIA-SEQUENCE, and a stale EXT-X-PROGRAM-DATE-TIME (observed 9 days
- * old). Media3 then buffers the window, plays it out, and parks in a "live"
- * READY position with nothing new to load: the UI looks ready, the picture
- * is frozen.
+ * Root cause verified in the field (ptv2026 VIP feeds): the origin serves a
+ * FROZEN media playlist — the same segment window, an unchanged
+ * EXT-X-MEDIA-SEQUENCE, and a 9-day-old EXT-X-PROGRAM-DATE-TIME. Media3
+ * buffers the window, plays it out, then parks with nothing new to load:
+ * the UI looks ready, the picture is frozen. The existing `silentStall`
+ * detector (READY + !isPlaying) does not catch this: during the play-out the
+ * player still reports isPlaying=true, and after the window runs out it can
+ * sit in READY without ever flipping to !isPlaying.
  *
- * Signal (evidence-driven, no frame-drop heuristics):
- *   LIVE HLS + playback position makes no real progress
- *   + the HLS media sequence never advanced during that window
- *   => the playlist is stale, not the device.
- *
- * A healthy live feed's media sequence advances every ~2-10 s, so a quiet
- * window of [quietWindowMs] with zero sequence progress on a LIVE stream is a
- * reliable stale-feed signature. VOD (null sequence) never arms the watchdog.
+ * Signal (deliberately simple and robust): on a LIVE item, the playback
+ * position makes no real progress for [quietWindowMs]. Live feeds advance
+ * position continuously (even across the live-edge jump-to-now), so a 45 s
+ * flat position on live is a stale-freeze signature. VOD items are never
+ * armed — the caller gates on the live kind.
  *
  * Pure Kotlin — JVM-testable (tdd/LiveStallWatchdogTest.kt).
  */
 class LiveStallWatchdog(
-    val quietWindowMs: Long = 45_000,   // 45 s frozen position + no seq advance => stale feed
+    val quietWindowMs: Long = 45_000,   // 45 s of flat position => frozen feed
     val minProgressMs: Long = 500L      // less than 0.5 s of real progress counts as "no progress"
 ) {
     private var lastPositionMs: Long = -1L
     private var stallSinceMs: Long = -1L
     private var fired = false
 
-    /** Feed every player tick (position + the current HLS media sequence). */
-    fun onTick(nowMs: Long, positionMs: Long, mediaSequence: Long?): Boolean {
-        if (mediaSequence == null) {
-            reset()
-            return false // not an HLS live feed — disarmed
-        }
+    /** Feed every player tick while a LIVE item is selected. */
+    fun onTick(nowMs: Long, positionMs: Long): Boolean {
         if (fired) return true
         if (lastPositionMs < 0) {
             lastPositionMs = positionMs
@@ -45,8 +40,6 @@ class LiveStallWatchdog(
         val progress = positionMs - lastPositionMs
         lastPositionMs = positionMs
         if (progress >= minProgressMs) {
-            // Real progress: the feed is still delivering this window. When the
-            // frozen window runs out, position stops and the quiet window fires.
             stallSinceMs = -1L
             return false
         }
@@ -58,14 +51,7 @@ class LiveStallWatchdog(
         return false
     }
 
-    /** Called when the timeline's HLS media sequence advances — the playlist
-     *  is provably alive; clear stall accumulation. */
-    fun onSequenceAdvanced() {
-        stallSinceMs = -1L
-        fired = false
-    }
-
-    /** Fresh media item selected — re-arm. */
+    /** Fresh media item selected / recovery reload — re-arm. */
     fun reset() {
         lastPositionMs = -1L
         stallSinceMs = -1L
