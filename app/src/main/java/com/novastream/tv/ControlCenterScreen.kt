@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Timeline
@@ -78,8 +79,9 @@ fun ControlScreen(
     val sourcesTotal = sources.size
     val sourcesWarning = sources.count { it.enabled && !it.healthy }
 
-    val lastDecision = remember { repo.recent(limit = 1).firstOrNull() }
+    val lastDecision = remember { repo.recent(MemoryRepository.MemoryQuery(limit = 1)).firstOrNull() }
     val lolaState = if (lastDecision == null) "IDLE" else lastDecision.state.name
+    val policyEvents = remember { repo.activityEvents().filter { it.contains("|POLICY:") } }
 
     val resolverStrategy = remember {
         mutableStateMapOf(
@@ -226,19 +228,19 @@ fun ControlScreen(
                     }
                 }
                 item {
-                    val events = repo.activityEvents().filter { it.contains("|POLICY:") }
+                    val events = policyEvents
                     val blocked = events.count { it.contains("DENIED") }
                     val warnings = events.count { it.contains("APPROVAL") }
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CcCountRow("Blocked today", blocked) { section = ControlSection.ACTIVITY }
-                        CcCountRow("Warnings", warnings) { section = ControlSection.ACTIVITY }
+                        CcCountRow("Blocked today", blocked.toString()) { section = ControlSection.ACTIVITY }
+                        CcCountRow("Warnings", warnings.toString()) { section = ControlSection.ACTIVITY }
                         CcCountRow("Last security scan", "Today " + timeFmt.format(Date())) { section = ControlSection.LOLA }
                     }
                 }
                 item {
                     // Tap a finding: actionable, plain-language — no raw policy exceptions first.
-                    if (events.any { it.contains("DENIED") }) {
-                        val latest = events.last { it.contains("DENIED") }
+                    if (policyEvents.any { it.contains("DENIED") }) {
+                        val latest = policyEvents.last { it.contains("DENIED") }
                         val parts = latest.split("|").drop(2)
                         CcPanelBox(CcRed) {
                             Text("BLOCKED ACTION", color = CcRed, fontWeight = FontWeight.Bold, fontSize = 13.sp)
