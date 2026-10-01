@@ -63,10 +63,12 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
     val activity = context as Activity
     val store = remember { PlaybackStore(context) }
     val prefs = remember { PlayerPreferences(context) }
+    val memoryRepo = remember { memoryRepositoryFor(context) }
     var message by remember { mutableStateOf("Connecting…") }
     var orientationLandscape by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
     var hasPlayedOnce by remember(item.id) { mutableStateOf(false) }
+    var urlMarkedPlayed by remember(item.id) { mutableStateOf(false) }
     var rebufferStartedAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastRecoveryAtMs by remember(item.id) { mutableLongStateOf(0L) }
     var lastProgressPositionMs by remember(item.id) { mutableLongStateOf(0L) }
@@ -99,7 +101,10 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
 
     val built = remember(item.id) { StreamPlayerFactory.buildAdaptive(context, item) }
     val player: ExoPlayer = built.player
+    val isLiveItem = item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
+    val stallWatchdog = remember(item.id) { LiveStallWatchdog() }
     LaunchedEffect(player, item.id) {
+        stallWatchdog.reset()
         player.setMediaItem(StreamPlayerFactory.mediaItem(item))
         if (item.kind != MediaKind.LIVE) {
             val resume = store.get(item.id)?.positionMs ?: 0L
@@ -126,6 +131,26 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 lastProgressPositionMs = currentPositionMs
                 lastProgressAtMs = now
             }
+            // Stale-feed watchdog: on a LIVE item, flat playback position for
+            // 45 s means the feed stopped delivering (verified: ptv2026 VIP
+            // feeds serve a 9-day-old frozen HLS window). The existing
+            // auto-recovery path reloads and the watchdog re-arms on reset().
+            if (isLiveItem) {
+                val frozen = stallWatchdog.onTick(now, currentPositionMs)
+                if (frozen && prefs.autoRetry && retryCount < 3 && now - lastRecoveryAtMs >= 6_000L) {
+                    retryCount++
+                    lastRecoveryAtMs = now
+                    stallWatchdog.reset()
+                    UrlIntelligenceRuntime.markStaleFeed(item.streamUrl, memoryRepo)
+                    trace = trace.copy(health = PlaybackHealth.RECOVERING, retryCount = retryCount)
+                    message = "Stalled — feed not updating, reloading…"
+                    player.stop()
+                    player.setMediaItem(StreamPlayerFactory.mediaItem(item))
+                    player.prepare()
+                    player.playWhenReady = true
+                    lastProgressAtMs = now
+                }
+            }
             val silentStall = player.playWhenReady && player.playbackState == Player.STATE_READY &&
                 !player.isPlaying && now - lastProgressAtMs >= 8_000L
             val decision = RecoveryBrain.decide(trace)
@@ -148,6 +173,7 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 val resumeAt = player.currentPosition.coerceAtLeast(0L)
                 retryCount++
                 lastRecoveryAtMs = now
+                stallWatchdog.reset()
                 trace = trace.copy(health = PlaybackHealth.RECOVERING, retryCount = retryCount)
                 message = "Recovering $retryCount/3…"
                 player.stop()
@@ -206,6 +232,12 @@ fun PlayerScreen(item: PlaylistItem, onBack: () -> Unit) {
                 if (value) {
                     hasPlayedOnce = true
                     trace = trace.copy(health = PlaybackHealth.PLAYING)
+                    // Runtime evidence for the URL Intelligence engine: the user
+                    // actually played this stream (not just a discovered string).
+                    if (!urlMarkedPlayed) {
+                        urlMarkedPlayed = true
+                        UrlIntelligenceRuntime.markPlayed(item.streamUrl)
+                    }
                 }
             }
 
