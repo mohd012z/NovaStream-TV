@@ -1,12 +1,14 @@
 package com.novastream.tv
 
 import android.content.Context
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheWriter
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
 /** Lightweight AVMDL-style preload using NovaStream's shared Media3 cache. */
+@UnstableApi
 object MediaPreloadManager {
     private const val SHORT_PRELOAD_BYTES = 4L * 1024L * 1024L
     private const val VOD_PRELOAD_BYTES = 8L * 1024L * 1024L
