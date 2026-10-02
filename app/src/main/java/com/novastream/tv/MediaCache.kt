@@ -1,6 +1,7 @@
 package com.novastream.tv
 
 import android.content.Context
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.cache.CacheDataSource
@@ -8,6 +9,7 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import java.io.File
 
+@UnstableApi
 object MediaCache {
     private var cache: SimpleCache? = null
 
