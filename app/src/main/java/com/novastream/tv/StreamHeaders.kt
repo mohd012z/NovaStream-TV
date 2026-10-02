@@ -18,7 +18,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
-@OptIn(UnstableApi::class)
+@UnstableApi
 object StreamPlayerFactory {
     data class BuiltPlayer(val player: ExoPlayer, val trackSelector: DefaultTrackSelector)
 
@@ -44,7 +44,6 @@ object StreamPlayerFactory {
                 .setDefaultRequestProperties(headers)
                 .setUserAgent(userAgent)
         } else {
-            // Keep local/non-HTTP compatibility instead of forcing OkHttp.
             DefaultHttpDataSource.Factory()
                 .setDefaultRequestProperties(headers)
                 .setConnectTimeoutMs(10_000)
@@ -58,10 +57,6 @@ object StreamPlayerFactory {
 
     fun buildAdaptive(context: Context, item: PlaylistItem): BuiltPlayer {
         val http = upstreamDataSourceFactory(item)
-
-        // MovieBox-style lesson worth keeping: cache seekable/episodic VOD, but
-        // never cache live television. Shorts benefit because replay, back-swipe,
-        // and the next episode can reuse already fetched media segments.
         val sourceFactory: DataSource.Factory = when (item.kind) {
             MediaKind.MOVIE, MediaKind.SERIES, MediaKind.SHORT_DRAMA,
             MediaKind.MUSIC, MediaKind.MUSIC_VIDEO -> MediaCache.dataSourceFactory(context, http)
@@ -76,13 +71,6 @@ object StreamPlayerFactory {
                 .build()
         }
 
-        // Live and VOD want different tradeoffs: live benefits from a smaller min/max buffer
-        // window (less to fill before the stream is considered "live enough" to start, and
-        // faster catch-up to the live edge after a stall), while VOD keeps a larger prebuffer
-        // so adaptive-bitrate seeking stays smooth. bufferForPlayback(AfterRebuffer)Ms is kept
-        // in the 1000-1500ms range for live (up from the previous 350/750ms shared value) since
-        // an extremely small buffer here caused stutter right after the first frame on slower
-        // IPTV origins; VOD keeps a smaller buffer requirement since its source is cached/seekable.
         val isLive = item.kind == MediaKind.LIVE || item.kind == MediaKind.UNKNOWN
         val isShort = item.kind == MediaKind.SHORT_DRAMA
         val minBufferMs = when {
@@ -112,20 +100,16 @@ object StreamPlayerFactory {
                 startBufferMs,
                 rebufferMs
             )
-            .setPrioritizeTimeOverSizeThresholds(true) // catch up to live edge / start faster instead of waiting on byte thresholds
+            .setPrioritizeTimeOverSizeThresholds(true)
             .setBackBuffer(when {
                 isLive -> 10_000
                 isShort -> 8_000
                 else -> 30_000
-            }, true) // trim old buffered media so seeking/rebuffering stays cheap
+            }, true)
             .build()
         val renderers = DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
 
-        // A number of IPTV HLS feeds use MPEG-TS segments without AUDs or
-        // conventional IDR keyframes. Media3 documents these as a cause of
-        // apparently permanent buffering. Use the compatibility extractor only
-        // for HLS/live-style sources; ordinary VOD keeps the default fast path.
         val tsCompatibilityFlags =
             DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS or
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES
